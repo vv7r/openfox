@@ -67,3 +67,5 @@ tmp/
 worktrees/
 
 /plugins/
+# Mobile perf bench results (npm run perf)
+perf-results/

@@ -27,7 +27,7 @@ export default tseslint.config(
   // CLI files legitimately use console.log for user-facing output; so do the
   // standalone maintenance scripts (scripts/optimize-snapshots.ts, ...).
   {
-    files: ['src/cli/**/*.ts', 'scripts/**/*.ts'],
+    files: ['src/cli/**/*.ts', 'scripts/**/*.ts', 'e2e-playwright/perf/**/*.ts'],
     rules: {
       'no-console': 'off',
     },
