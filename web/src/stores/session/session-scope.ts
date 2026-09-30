@@ -29,15 +29,24 @@ export function useScopedPaneState<T>(
   flatPick: (state: SessionState) => T,
   fallback: T,
 ): T {
-  return useSessionStore((state) => {
-    if (scopeId) {
-      const pane = state.panes?.[scopeId]
-      if (pane) return pick(pane)
-      if (state.currentSession?.id === scopeId) return flatPick(state)
-      return fallback
-    }
-    return flatPick(state)
-  })
+  return useSessionStore((state) => pickScopedPane(state, scopeId, pick, flatPick, fallback))
+}
+
+/** The selection behind useScopedPaneState, for selectors that derive from it (e.g. with useShallow). */
+export function pickScopedPane<T>(
+  state: SessionState,
+  scopeId: string | null | undefined,
+  pick: (pane: SessionPane) => T,
+  flatPick: (state: SessionState) => T,
+  fallback: T,
+): T {
+  if (scopeId) {
+    const pane = state.panes?.[scopeId]
+    if (pane) return pick(pane)
+    if (state.currentSession?.id === scopeId) return flatPick(state)
+    return fallback
+  }
+  return flatPick(state)
 }
 
 /**

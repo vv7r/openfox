@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useCallback, useMemo, type ComponentProps } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useSessionStore, useIsRunning } from '../../stores/session'
 import { useDisplaySettings } from '../../hooks/useDisplaySettings'
 import { type TurnStats } from '../../lib/types'
@@ -35,7 +36,7 @@ import type { OverlayScrollbarsComponentRef } from 'overlayscrollbars-react'
 import { useScrolledSend } from '@/hooks/useScrolledSend.ts'
 import { useEffortGatedAgentSwitch } from '@/hooks/useEffortGateContext.ts'
 import { useKeybindings, useBinding, useAgentSwitchingBindings } from '../../hooks/useKeybindings'
-import { SessionScopeProvider, useScopedPaneState } from '../../stores/session/session-scope'
+import { SessionScopeProvider, pickScopedPane, useScopedPaneState } from '../../stores/session/session-scope'
 
 interface PlanPanelProps {
   criteriaSidebarOpen?: boolean
@@ -86,32 +87,35 @@ export function PlanPanel({
     (state) => state.currentSession,
     null,
   )
-  const storeMessages = useScopedPaneState(
-    scoped ? scopedSessionId : null,
-    (pane) => pane.messages,
-    (state) => state.messages,
-    [],
-  )
-  const storeHiddenCount = useScopedPaneState(
-    scoped ? scopedSessionId : null,
-    (pane) => pane.hiddenCount ?? 0,
-    (state) => state.hiddenCount,
-    0,
+  // Only the user prompts feed the prompt history. Selecting just them (shallow
+  // compared) keeps PlanPanel — composer, menus, modals — from re-rendering on
+  // every streamed frame; the feed subscribes to the full list in PlanFeed.
+  const storeUserMessages = useSessionStore(
+    useShallow((state) =>
+      pickScopedPane(
+        state,
+        scoped ? scopedSessionId : null,
+        (pane) => pane.messages,
+        (flat) => flat.messages,
+        EMPTY_MESSAGES,
+      ).filter(isUserMessage),
+    ),
   )
   const sessions = useSessionStore((state) => state.sessions)
   const isRunning = useIsRunning(scoped ? scopedSessionId : null)
   const stopGeneration = useSessionStore((state) => state.stopGeneration)
 
-  const messages = propRawMessages ?? storeMessages
-
-  const { maxVisibleItems } = useDisplaySettings()
+  const userMessages = useMemo(
+    () => (propRawMessages ? propRawMessages.filter(isUserMessage) : storeUserMessages),
+    [propRawMessages, storeUserMessages],
+  )
 
   const { agents } = useAgents(session?.workdir)
   const topLevelAgents = agents.filter((a) => !a.subagent)
   const { workflows } = useWorkflows(session?.workdir)
 
   const { history, selectedIndex, showHistory, openHistory, closeHistory, navigateUp, navigateDown, selectCurrent } =
-    usePromptHistory(messages, sessions, session?.id)
+    usePromptHistory(userMessages, sessions, session?.id)
 
   useEffect(() => {
     if (!isFocusedPane) return
@@ -140,26 +144,6 @@ export function PlanPanel({
     return () => window.removeEventListener('keydown', handler)
   }, [isFocusedPane])
 
-  const previousDisplayItemsRef = useRef<DisplayItem[]>([])
-
-  const { displayItems, hiddenCount: computedHiddenCount } = useMemo((): {
-    displayItems: DisplayItem[]
-    hiddenCount: number
-  } => {
-    const items = groupMessages(messages, previousDisplayItemsRef.current)
-    previousDisplayItemsRef.current = items
-    if (maxVisibleItems > 0 && items.length > maxVisibleItems) {
-      return { displayItems: items.slice(-maxVisibleItems), hiddenCount: items.length - maxVisibleItems }
-    }
-    return { displayItems: items, hiddenCount: 0 }
-  }, [messages, maxVisibleItems])
-
-  // The server reports how many messages it trimmed (maxVisibleItems cap); that
-  // value lives in the store and is authoritative. The client-side computation
-  // below is only a fallback for data that arrived untrimmed (streaming/replay),
-  // where the server value would already be reflected or unavailable.
-  const hiddenCount = propHiddenCount ?? storeHiddenCount ?? computedHiddenCount
-
   const { isAutoScrollActive, setAutoScroll, handleScrollbarGesture } = useAutoScroll(
     scrollContainerRef,
     session,
@@ -167,6 +151,8 @@ export function PlanPanel({
   )
   const { sendMessage, launchWorkflow } = useScrolledSend(setAutoScroll, targetSessionId)
   const gatedAgentSwitch = useEffortGatedAgentSwitch(targetSessionId)
+
+  const disableAutoScroll = useCallback(() => setAutoScroll(false), [setAutoScroll])
 
   useEffect(() => {
     const handler = () => setAutoScroll(true)
@@ -337,24 +323,17 @@ export function PlanPanel({
         {turnStatsModal && <TurnStatsModal stats={turnStatsModal} onClose={() => setTurnStatsModal(null)} />}
         <ConnectionStatusBar />
 
-        <MessageList
-          displayItems={displayItems}
+        <PlanFeed
+          scopedSessionId={scopedSessionId}
+          rawMessages={propRawMessages}
+          hiddenCount={propHiddenCount}
+          projectId={session?.projectId}
+          sessionId={session?.id}
           scrollContainerRef={scrollContainerRef}
-          // Highlight is intentionally wired to the timeline's FEED_REVEAL_EVENT:
-          // navigation reveals the target placeholder region before scrolling,
-          // so no highlight target is ever an unmounted item. Passing null here
-          // keeps the highlight path dead until a caller reveals first.
-          highlightedMessageId={null}
           onLaunchWorkflow={handleLaunchWorkflow}
-          onScrollToTop={() => setAutoScroll(false)}
-          hiddenCount={hiddenCount}
+          onScrollToTop={disableAutoScroll}
           onScrollbarGesture={handleScrollbarGesture}
           isAutoScrollActive={isAutoScrollActive}
-          emptyState={
-            messages.length === 0 && session?.projectId ? (
-              <FeedTaskPreview projectId={session.projectId} sessionId={session.id} />
-            ) : undefined
-          }
         />
 
         <ChatInput
@@ -474,18 +453,138 @@ export function PlanPanel({
       </SessionLayout>
 
       {showMessageSearch && (
-        <MessageSearchModal
-          isOpen={showMessageSearch}
+        <PlanMessageSearch
+          scopedSessionId={scopedSessionId}
+          rawMessages={propRawMessages}
           onClose={() => {
             setShowMessageSearch(false)
             focusChatTextarea(true)
           }}
-          displayItems={displayItems}
           onNavigate={handleTimelineNavigate}
         />
       )}
     </SessionScopeProvider>
   )
+}
+
+const EMPTY_MESSAGES: Message[] = []
+
+function isUserMessage(message: Message): boolean {
+  return message.role === 'user'
+}
+
+/**
+ * The feed's display items for a pane (or the given raw messages). Subscribes
+ * to the full message list, which changes on every streamed frame — keep it in
+ * the components that render the feed, not in PlanPanel.
+ */
+function useFeedDisplayItems(scopedSessionId: string | null | undefined, rawMessages: Message[] | undefined) {
+  const storeMessages = useScopedPaneState(
+    scopedSessionId ?? null,
+    (pane) => pane.messages,
+    (state) => state.messages,
+    EMPTY_MESSAGES,
+  )
+  const messages = rawMessages ?? storeMessages
+  const { maxVisibleItems } = useDisplaySettings()
+  const previousDisplayItemsRef = useRef<DisplayItem[]>([])
+
+  const { displayItems, hiddenCount } = useMemo((): {
+    displayItems: DisplayItem[]
+    hiddenCount: number
+  } => {
+    const items = groupMessages(messages, previousDisplayItemsRef.current)
+    previousDisplayItemsRef.current = items
+    if (maxVisibleItems > 0 && items.length > maxVisibleItems) {
+      return { displayItems: items.slice(-maxVisibleItems), hiddenCount: items.length - maxVisibleItems }
+    }
+    return { displayItems: items, hiddenCount: 0 }
+  }, [messages, maxVisibleItems])
+
+  return { messages, displayItems, computedHiddenCount: hiddenCount }
+}
+
+interface PlanFeedProps {
+  scopedSessionId: string | null | undefined
+  rawMessages: Message[] | undefined
+  hiddenCount: number | undefined
+  projectId: string | undefined
+  sessionId: string | undefined
+  scrollContainerRef: React.RefObject<OverlayScrollbarsComponentRef<'div'> | null>
+  onLaunchWorkflow: (
+    workflowId: string,
+    subGroup?: string,
+    params?: Record<string, string>,
+    scope?: WorkflowLaunchScope,
+  ) => void
+  onScrollToTop: () => void
+  onScrollbarGesture: ComponentProps<typeof MessageList>['onScrollbarGesture']
+  isAutoScrollActive: boolean
+}
+
+/** The message feed: the only part of the panel that re-renders on every streamed frame. */
+const PlanFeed = memo(function PlanFeed({
+  scopedSessionId,
+  rawMessages,
+  hiddenCount: propHiddenCount,
+  projectId,
+  sessionId,
+  scrollContainerRef,
+  onLaunchWorkflow,
+  onScrollToTop,
+  onScrollbarGesture,
+  isAutoScrollActive,
+}: PlanFeedProps) {
+  const { messages, displayItems, computedHiddenCount } = useFeedDisplayItems(scopedSessionId, rawMessages)
+  const storeHiddenCount = useScopedPaneState(
+    scopedSessionId ?? null,
+    (pane) => pane.hiddenCount ?? 0,
+    (state) => state.hiddenCount,
+    0,
+  )
+  // The server reports how many messages it trimmed (maxVisibleItems cap); that
+  // value lives in the store and is authoritative. The client-side computation
+  // below is only a fallback for data that arrived untrimmed (streaming/replay),
+  // where the server value would already be reflected or unavailable.
+  const hiddenCount = propHiddenCount ?? storeHiddenCount ?? computedHiddenCount
+
+  return (
+    <MessageList
+      displayItems={displayItems}
+      scrollContainerRef={scrollContainerRef}
+      // Highlight is intentionally wired to the timeline's FEED_REVEAL_EVENT:
+      // navigation reveals the target placeholder region before scrolling,
+      // so no highlight target is ever an unmounted item. Passing null here
+      // keeps the highlight path dead until a caller reveals first.
+      highlightedMessageId={null}
+      onLaunchWorkflow={onLaunchWorkflow}
+      onScrollToTop={onScrollToTop}
+      hiddenCount={hiddenCount}
+      onScrollbarGesture={onScrollbarGesture}
+      isAutoScrollActive={isAutoScrollActive}
+      emptyState={
+        messages.length === 0 && projectId && sessionId ? (
+          <FeedTaskPreview projectId={projectId} sessionId={sessionId} />
+        ) : undefined
+      }
+    />
+  )
+})
+
+/** Message search, mounted only while open so it only follows the feed while in use. */
+function PlanMessageSearch({
+  scopedSessionId,
+  rawMessages,
+  onClose,
+  onNavigate,
+}: {
+  scopedSessionId: string | null | undefined
+  rawMessages: Message[] | undefined
+  onClose: () => void
+  onNavigate: (index: number) => void
+}) {
+  const { displayItems } = useFeedDisplayItems(scopedSessionId, rawMessages)
+  return <MessageSearchModal isOpen onClose={onClose} displayItems={displayItems} onNavigate={onNavigate} />
 }
 
 export { VisionFallbackItem } from './VisionFallbackItem'
