@@ -4,9 +4,10 @@
  * truth per key.
  *
  * Snapshot contract: `snapshot(key)` returns a referentially-stable object that
- * is only rebuilt when the module `version` counter bumps on emit. This is what
- * makes the cache safe to hand to `useSyncExternalStore` — a freshly allocated
- * object on every call would loop renders forever.
+ * is only rebuilt when that key's entry changes. This is what makes the cache
+ * safe to hand to `useSyncExternalStore` — a freshly allocated object on every
+ * call would loop renders forever — and it keeps a change to one key from
+ * re-rendering the consumers of every other key.
  */
 
 export interface Entry<Data> {
@@ -18,6 +19,8 @@ export interface Entry<Data> {
   refs: number
   /** Last fetcher handed to `load`/`refresh`, so a prefix refresh can replay it. */
   fetcher: (() => Promise<Data>) | null
+  /** Snapshot handed to subscribers; reset to null whenever the entry changes. */
+  snapshot: Snapshot<Data> | null
 }
 
 export interface Snapshot<Data> {
@@ -48,20 +51,27 @@ export const GRACE_MS = 30_000
 
 const entries = new Map<string, Entry<unknown>>()
 const listeners = new Set<Listener>()
-let version = 0
-let lastSnapshotVersion = -1
-let snapshotCache = new Map<string, unknown>()
+/** Shared snapshot for keys with nothing cached (no data, not loading, no error). */
+const EMPTY_SNAPSHOT: Snapshot<never> = Object.freeze({ data: undefined, loading: false, error: undefined })
 let evictionTimer: ReturnType<typeof setTimeout> | null = null
 
 function emit(): void {
-  version++
   for (const listener of listeners) listener()
 }
 
 function entry<Data>(key: string): Entry<Data> {
   let e = entries.get(key) as Entry<Data> | undefined
   if (!e) {
-    e = { data: undefined, loading: false, error: undefined, fetchedAt: null, promise: null, refs: 0, fetcher: null }
+    e = {
+      data: undefined,
+      loading: false,
+      error: undefined,
+      fetchedAt: null,
+      promise: null,
+      refs: 0,
+      fetcher: null,
+      snapshot: null,
+    }
     entries.set(key, e as Entry<unknown>)
   }
   return e
@@ -79,6 +89,7 @@ function settle<Data>(key: string, result: { data?: Data; error?: unknown }): vo
   }
   e.loading = false
   e.promise = null
+  e.snapshot = null
   emit()
 }
 
@@ -87,6 +98,7 @@ function startFetch<Data>(key: string, fetcher: () => Promise<Data>): Promise<Da
   e.loading = true
   e.error = undefined
   e.fetcher = fetcher
+  e.snapshot = null
   emit()
   const p = Promise.resolve()
     .then(fetcher)
@@ -112,21 +124,10 @@ export function subscribe(listener: Listener): () => void {
 }
 
 export function snapshot<Data>(key: string): Snapshot<Data> {
-  if (lastSnapshotVersion !== version) {
-    snapshotCache = new Map()
-    lastSnapshotVersion = version
-  }
-  let snap = snapshotCache.get(key) as Snapshot<Data> | undefined
-  if (!snap) {
-    const e = entries.get(key) as Entry<Data> | undefined
-    snap = {
-      data: e?.data,
-      loading: e?.loading ?? false,
-      error: e?.error,
-    }
-    snapshotCache.set(key, snap)
-  }
-  return snap
+  const e = entries.get(key) as Entry<Data> | undefined
+  if (!e || (e.data === undefined && !e.loading && e.error === undefined)) return EMPTY_SNAPSHOT
+  e.snapshot ??= { data: e.data, loading: e.loading, error: e.error }
+  return e.snapshot
 }
 
 /**
@@ -203,7 +204,7 @@ export function refreshPrefix(prefix: string): void {
 
 /**
  * Write-through for WS-pushed payloads (or optimistic updates): replace the
- * entry data and bump the version so subscribers re-render, WITHOUT issuing a
+ * entry data and notify so the key's subscribers re-render, WITHOUT issuing a
  * fetch. Fetch fills the cache, push updates it — both pipelines converge on
  * the same key with no refetch storm.
  */
@@ -214,6 +215,7 @@ export function write<Data>(key: string, data: Data): void {
   e.fetchedAt = Date.now()
   e.loading = false
   e.promise = null
+  e.snapshot = null
   emit()
 }
 
@@ -233,8 +235,6 @@ export function resource<Data, Args extends unknown[]>(opts: ResourceOptions<Dat
 /** Test-only: wipe the module-level cache, pending timers, and snapshot cache. */
 export function clearCache(): void {
   entries.clear()
-  snapshotCache = new Map()
-  lastSnapshotVersion = -1
   if (evictionTimer !== null) {
     clearTimeout(evictionTimer)
     evictionTimer = null

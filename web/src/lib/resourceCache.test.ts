@@ -127,21 +127,46 @@ describe('resourceCache', () => {
     unsubscribe()
   })
 
-  it('returns a referentially stable snapshot for the same key until the next emit', () => {
+  it('returns a referentially stable snapshot for a key until that key changes', async () => {
     load(
       'k',
       vi.fn(async () => 'x'),
     )
+    await vi.runAllTimersAsync()
     const a = snapshot('k')
-    const b = snapshot('k')
-    expect(a).toBe(b)
+    expect(snapshot('k')).toBe(a)
 
+    // Another key changing must not hand every subscriber a new object: with
+    // useSyncExternalStore that re-renders all resource consumers (App included).
     load(
       'other',
       vi.fn(async () => 'y'),
     )
-    const c = snapshot('k')
-    expect(c).not.toBe(a)
+    await vi.runAllTimersAsync()
+    write('other', 'z')
+    expect(snapshot('k')).toBe(a)
+
+    write('k', 'x2')
+    const b = snapshot('k')
+    expect(b).not.toBe(a)
+    expect(b.data).toBe('x2')
+    expect(snapshot('k')).toBe(b)
+  })
+
+  it('returns a stable empty snapshot for keys with nothing cached', () => {
+    const a = snapshot('missing')
+    retain('missing')
+    write('unrelated', 1)
+    expect(snapshot('missing')).toBe(a)
+    expect(a).toEqual({ data: undefined, loading: false, error: undefined })
+  })
+
+  it('hands out a new snapshot when a key is invalidated', async () => {
+    write('k', 'v')
+    const a = snapshot('k')
+    invalidate('k')
+    expect(snapshot('k')).not.toBe(a)
+    expect(snapshot('k').data).toBeUndefined()
   })
 
   it('keeps entries for different keys fully isolated', async () => {
