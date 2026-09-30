@@ -76,8 +76,9 @@ export const PERF_PROBE_SOURCE = `(() => {
 /**
  * Simulates a network drop for the reconnection scenario, in `window.__net`:
  *  - `cut()` closes every live WebSocket and makes new ones fail (they dial a
- *    closed port, so they error out like a dead network) and rejects `fetch`
- *  - `restore()` lets connections through again
+ *    closed port, so they error out like a dead network), rejects `fetch` and
+ *    fires `offline`
+ *  - `restore()` lets connections through again and fires `online`
  *  - `opens`: timestamps of every successful WebSocket open
  */
 export const NETWORK_CUT_SOURCE = `(() => {
@@ -96,11 +97,16 @@ export const NETWORK_CUT_SOURCE = `(() => {
   window.WebSocket = PerfWebSocket
   const nativeFetch = window.fetch.bind(window)
   window.fetch = (...args) => (N.blocked ? Promise.reject(new TypeError('Failed to fetch')) : nativeFetch(...args))
+  // Like a real browser, going offline/online fires the matching window events.
   N.cut = () => {
     N.blocked = true
     for (const socket of N.sockets) socket.close()
+    window.dispatchEvent(new Event('offline'))
   }
-  N.restore = () => { N.blocked = false }
+  N.restore = () => {
+    N.blocked = false
+    window.dispatchEvent(new Event('online'))
+  }
 })()`
 
 /**
