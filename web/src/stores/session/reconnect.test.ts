@@ -14,6 +14,8 @@ vi.stubGlobal('localStorage', {
   removeItem: vi.fn(),
 })
 
+const wsState = vi.hoisted(() => ({ connected: true }))
+
 const { wsSendMock, wsSubscribeMock, wsConnectMock, wsDisconnectMock, wsStatusMock } = vi.hoisted(() => ({
   wsSendMock: vi.fn(() => 'message-id'),
   wsSubscribeMock: vi.fn(() => () => undefined),
@@ -29,6 +31,9 @@ vi.mock('../../lib/ws', () => ({
     connect: wsConnectMock,
     disconnect: wsDisconnectMock,
     onStatusChange: wsStatusMock,
+    get isConnected() {
+      return wsState.connected
+    },
   },
 }))
 
@@ -86,6 +91,135 @@ describe('reconnect refreshes current session content', () => {
     ;(cb as (s: string) => void)('connected')
 
     expect(loadSessionSpy).toHaveBeenCalledWith('session-active')
+  })
+
+  it('loads the session once when the REST load finishes before the socket opens', async () => {
+    const useSessionStore = await loadSessionStore()
+    const session = {
+      id: 's1',
+      projectId: 'project-1',
+      workdir: '/tmp/project-1',
+      mode: 'planner',
+      phase: 'plan',
+      isRunning: true,
+      criteria: [],
+    }
+    const json = (url: string) =>
+      url.includes('/background-processes')
+        ? { processes: [] }
+        : url.endsWith('/api/sessions/s1')
+          ? { session, messages: [], lastEventSeq: 9 }
+          : { success: true }
+    fetchMock.mockImplementation(((url: string) =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json(String(url))) })) as never)
+    wsState.connected = false
+    try {
+      await useSessionStore.getState().connect()
+      const setStatus = (wsStatusMock.mock.calls[0] as unknown as [(status: string) => void])[0]
+
+      // The page boots: the session loads over REST before the socket is open.
+      await useSessionStore.getState().loadSession('s1')
+      expect(wsSendMock).not.toHaveBeenCalledWith('session.load', expect.anything())
+
+      // The socket opens: the session subscribes by resuming from the loaded
+      // seq (nothing to replay) instead of being loaded over REST a second time.
+      wsState.connected = true
+      setStatus('connected')
+      expect(wsSendMock).toHaveBeenCalledWith('session.load', { sessionId: 's1', lastEventSeq: 9 })
+      const sessionLoads = (fetchMock.mock.calls as unknown as Array<[unknown]>).filter(([url]) =>
+        String(url).endsWith('/api/sessions/s1'),
+      )
+      expect(sessionLoads).toHaveLength(1)
+    } finally {
+      wsState.connected = true
+      fetchMock.mockReset()
+      fetchMock.mockImplementation(() =>
+        Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }), status: 200 }),
+      )
+    }
+  })
+
+  describe('resume from the last applied event', () => {
+    async function connectedStore() {
+      const useSessionStore = await loadSessionStore()
+      useSessionStore.setState({
+        currentSession: {
+          id: 's1',
+          projectId: 'project-1',
+          workdir: '/tmp/project-1',
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: true,
+          criteria: [],
+          summary: null,
+        } as any,
+        messages: [{ id: 'm1', role: 'assistant', content: 'Hel', timestamp: '2024-01-01T00:00:00.000Z' }] as any,
+        sessionStats: { totalTime: 12 } as any,
+      })
+      await useSessionStore.getState().connect()
+      const deliver = (wsSubscribeMock.mock.calls[0] as unknown as [(message: unknown) => void])[0]
+      const setStatus = (wsStatusMock.mock.calls[0] as unknown as [(status: string) => void])[0]
+      const loadSessionSpy = vi.spyOn(useSessionStore.getState(), 'loadSession').mockResolvedValue(undefined)
+      wsSendMock.mockImplementation(() => 'resume-request')
+      return { useSessionStore, deliver, setStatus, loadSessionSpy }
+    }
+
+    const delta = (seq: number, content: string, replay?: true) => ({
+      type: 'chat.delta',
+      sessionId: 's1',
+      seq,
+      payload: { messageId: 'm1', content },
+      ...(replay ? { replay } : {}),
+    })
+
+    it('replays the missed events instead of reloading the session', async () => {
+      const { useSessionStore, deliver, setStatus, loadSessionSpy } = await connectedStore()
+      deliver(delta(5, 'lo'))
+
+      setStatus('connected')
+      expect(wsSendMock).toHaveBeenCalledWith('session.load', { sessionId: 's1', lastEventSeq: 5 })
+
+      // A live event racing the request is dropped: the replay contains it.
+      deliver(delta(7, 'ld'))
+      deliver(delta(6, ' wor', true))
+      deliver(delta(7, 'ld', true))
+      deliver({
+        type: 'ack',
+        id: 'resume-request',
+        payload: {
+          sessionId: 's1',
+          resume: 'replayed',
+          // The light resume state: no sessionStats / pendingConfirmations.
+          state: {
+            session: { ...useSessionStore.getState().currentSession, isRunning: false },
+            queueState: [],
+            pendingQuestions: [],
+            activeWorkflowExecution: null,
+            lastEventSeq: 7,
+          },
+        },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 40))
+
+      expect(useSessionStore.getState().messages[0]?.content).toBe('Hello world')
+      expect(useSessionStore.getState().currentSession?.isRunning).toBe(false)
+      expect(useSessionStore.getState().sessionStats).toEqual({ totalTime: 12 })
+      expect(loadSessionSpy).not.toHaveBeenCalled()
+      wsSendMock.mockReset()
+      wsSendMock.mockImplementation(() => 'message-id')
+    })
+
+    it('falls back to a full reload when the server cannot replay', async () => {
+      const { deliver, setStatus, loadSessionSpy } = await connectedStore()
+      deliver(delta(5, 'lo'))
+
+      setStatus('connected')
+      deliver({ type: 'ack', id: 'resume-request', payload: { sessionId: 's1', resume: 'full' } })
+
+      expect(loadSessionSpy).toHaveBeenCalledWith('s1', true)
+      wsSendMock.mockReset()
+      wsSendMock.mockImplementation(() => 'message-id')
+    })
   })
 
   it('does not call loadSession when reconnecting without an active session', async () => {

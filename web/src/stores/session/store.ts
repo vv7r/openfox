@@ -18,6 +18,7 @@ import { useBackgroundProcessesStore } from '../background-processes'
 import { writeSplitLayout, isSplitRoute } from '../../lib/splitPersistence'
 import type { SessionState, SessionPane, PendingPathConfirmation } from './types'
 import { getBuffer, setFlushFn, cancelStreamingFlush, releaseStreamingBuffer } from './streamingBuffer'
+import { beginResume, endResume, expectAck, getLastEventSeq, handleAck, setLastEventSeq } from './resume'
 import {
   handleServerMessage as handleMessage,
   trimPaneMessages,
@@ -55,6 +56,7 @@ interface SessionLoadData {
   pendingConfirmations?: PendingPathConfirmation[]
   pendingQuestions?: PendingQuestionPayload[]
   activeWorkflowExecution?: WorkflowExecution | null
+  lastEventSeq?: number
 }
 
 function applyToolOutputs(
@@ -225,6 +227,65 @@ export const useSessionStore = create<SessionState>((set, get) => {
   }
 
   /**
+   * After a reconnect, fetch only the events missed while disconnected
+   * (session.load with lastEventSeq) instead of reloading the whole session.
+   * Falls back to the full REST load when there is nothing to resume from, or
+   * when the server cannot replay (resume: 'full', older server, no ack). The
+   * fallbacks force it: the session can already be marked loaded (loaded
+   * before the socket opened).
+   */
+  function resumeOrLoad(sessionId: string) {
+    const lastEventSeq = getLastEventSeq(sessionId)
+    const state = get()
+    const pane = state.panes[sessionId] ?? (effectiveFocusedId(state) === sessionId ? paneFromFlat(state) : null)
+    if (lastEventSeq === undefined || !pane?.session) {
+      void get().loadSession(sessionId)
+      return
+    }
+    let requestId: string
+    try {
+      requestId = wsClient.send('session.load', { sessionId, lastEventSeq })
+    } catch {
+      void get().loadSession(sessionId, true)
+      return
+    }
+    beginResume(sessionId)
+    // Runs synchronously when the ack arrives: the replayed events were
+    // processed just before it, and nothing live is applied in between.
+    expectAck(
+      requestId,
+      (payload) => {
+        endResume(sessionId)
+        const resumed =
+          payload?.['resume'] === 'replayed' ? (payload['state'] as SessionLoadData | undefined) : undefined
+        if (!resumed) {
+          void get().loadSession(sessionId, true)
+          return
+        }
+        set((s) =>
+          updatePane(s, sessionId, (p) => ({
+            ...p,
+            // The resume state is the light one (no event-log fold): session
+            // stats arrive with the next session.state — keep the current
+            // ones meanwhile. Pending confirmations are the server's current
+            // ones (an older server does not send them: keep ours).
+            session: resumed.session,
+            sessionStats: resumed.sessionStats ?? p.sessionStats,
+            contextState: resumed.contextState ?? p.contextState,
+            queuedMessages: resumed.queueState ?? [],
+            pendingPathConfirmations: (resumed.pendingConfirmations ??
+              p.pendingPathConfirmations) as PendingPathConfirmation[],
+            pendingQuestions: (resumed.pendingQuestions ?? []) as PendingQuestionPayload[],
+            activeWorkflowExecution: resumed.activeWorkflowExecution ?? null,
+          })),
+        )
+        loadedSessionIds.add(sessionId)
+      },
+      10_000,
+    )
+  }
+
+  /**
    * Core loader. Ensures `sessionId` has a live pane. When `focus` is true the
    * pane becomes the focused session (the router/URL session); otherwise it is
    * loaded as a background pane for the split view.
@@ -319,6 +380,8 @@ export const useSessionStore = create<SessionState>((set, get) => {
         return
       }
       const loadedMessages = (data.messages as Message[] | undefined) ?? []
+      // Where a resume after a reconnect starts from (see resume.ts).
+      if (typeof data.lastEventSeq === 'number') setLastEventSeq(sessionId, data.lastEventSeq)
       const crossCleanup2 = { ...get().crossSessionConfirmations }
       delete crossCleanup2[sessionId]
       set((s) => {
@@ -343,7 +406,12 @@ export const useSessionStore = create<SessionState>((set, get) => {
         }
       })
 
-      wsClient.send('session.load', { sessionId })
+      // Subscribe this connection to the session's live events. When the socket
+      // is not open yet (the boot-time load races the connection), the
+      // 'connected' handler resumes the session from the seq just loaded
+      // instead: sending here would throw, leave the session unmarked as
+      // loaded, and make the connect handler load it over REST a second time.
+      if (wsClient.isConnected) wsClient.send('session.load', { sessionId })
 
       try {
         const bpRes = await bpFetch
@@ -445,7 +513,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
           // session.load after every connection drop.
           const currentSessionId = get().focusedSessionId ?? get().currentSession?.id
           if (currentSessionId) {
-            void get().loadSession(currentSessionId)
+            resumeOrLoad(currentSessionId)
           }
         } else if (newStatus === 'disconnected' || newStatus === 'reconnecting') {
           loadedSessionIds.clear()
@@ -458,6 +526,7 @@ export const useSessionStore = create<SessionState>((set, get) => {
         if (!isSubscribed) {
           isSubscribed = true
           wsUnsubscribe = wsClient.subscribe((message) => {
+            if (handleAck(message)) return
             handleMessage(message, set, get)
           })
         }

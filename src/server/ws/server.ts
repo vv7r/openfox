@@ -6,6 +6,8 @@ import type { ServerMessage } from '../../shared/protocol.js'
 import type { GitDiffFile } from '../../shared/protocol.js'
 import { createServerMessage } from '../../shared/protocol.js'
 import { createSessionStateMessage } from './protocol.js'
+import { buildReplayMessages } from './replay.js'
+import { buildSessionResumeState } from '../session/load-data.js'
 import { handleTerminalMessage, unsubscribeAllFromTerminal } from './terminal.js'
 import type { Config } from '../config.js'
 import type { LLMClientWithModel } from '../llm/client.js'
@@ -332,6 +334,12 @@ interface ClientConnection {
 }
 
 const MAX_SEND_QUEUE_SIZE = 1000 // Maximum messages to queue before dropping
+// A resume replaying more than this falls back to a full reload rather than
+// risk the send queue dropping part of it.
+const MAX_REPLAY_MESSAGES = MAX_SEND_QUEUE_SIZE / 2
+// Above this many missed events (tool.preparing excluded), a full reload is
+// cheaper than reading and merging them all.
+const MAX_REPLAY_EVENTS = 5000
 
 /**
  * WebSocket Message Ordering Implementation
@@ -1022,9 +1030,35 @@ async function handleClientMessage(
 
       ensureEventStoreSubscription(session.id)
 
-      // Acknowledge without sending full session data
-      // Frontend should use REST API to fetch session data
-      send({ type: 'ack', payload: { sessionId: session.id }, id: message.id })
+      const resumeFrom = message.payload.lastEventSeq
+      if (typeof resumeFrom === 'number') {
+        // Resume after a reconnect: re-send the events missed since
+        // `resumeFrom`, then ack with the light session state. All in this
+        // synchronous block, so state, replay and live stream line up on the
+        // same seq. Cheap checks first: when the events after resumeFrom may
+        // have been cleaned up (before the latest snapshot), the client is
+        // ahead of the store, or too much is missing, answer 'full' before
+        // reading anything heavy; the client then reloads over REST.
+        const eventStore = getEventStore()
+        const latestSeq = eventStore.getLatestSeq(session.id) ?? 0
+        const missed =
+          resumeFrom >= eventStore.getLatestSnapshotSeq(session.id) && resumeFrom <= latestSeq
+            ? eventStore.getReplayEvents(session.id, resumeFrom, MAX_REPLAY_EVENTS)
+            : null
+        const replay = missed ? buildReplayMessages(missed) : null
+        const state =
+          replay && replay.length <= MAX_REPLAY_MESSAGES ? buildSessionResumeState(sessionManager, session.id) : null
+        if (replay && state) {
+          for (const event of replay) send(event)
+          send({ type: 'ack', payload: { sessionId: session.id, resume: 'replayed', state }, id: message.id })
+        } else {
+          send({ type: 'ack', payload: { sessionId: session.id, resume: 'full' }, id: message.id })
+        }
+      } else {
+        // Acknowledge without sending full session data
+        // Frontend should use REST API to fetch session data
+        send({ type: 'ack', payload: { sessionId: session.id }, id: message.id })
+      }
 
       // Send context.state
       const sendContextState = () => {

@@ -209,6 +209,7 @@ vi.mock('../chat/orchestrator.js', async (importOriginal) => {
 
 vi.mock('../events/index.js', () => ({
   getEventStore: getEventStoreMock,
+  combineEventsWithSnapshot: vi.fn((_sessionId: string, _snapshot: unknown, events: unknown[]) => events),
   getContextMessages: getContextMessagesMock,
   getCurrentContextWindowId: getCurrentContextWindowIdMock,
   getCurrentWindowMessageOptions: vi.fn((sessionId: string) => {
@@ -284,11 +285,27 @@ function createEventStore() {
 
       return stored
     }),
-    getEvents: vi.fn((sessionId: string) => eventsBySession.get(sessionId) ?? []),
+    getEvents: vi.fn((sessionId: string, fromSeq?: number) =>
+      (eventsBySession.get(sessionId) ?? []).filter((event) => fromSeq === undefined || event.seq >= fromSeq),
+    ),
+    getEventsSinceSnapshot: vi.fn((sessionId: string) => ({
+      snapshot: undefined,
+      events: eventsBySession.get(sessionId) ?? [],
+    })),
+    getLatestSnapshotSeq: vi.fn((_sessionId: string) => 0),
+    getReplayEvents: vi.fn((sessionId: string, afterSeq: number, maxEvents: number) => {
+      const events = (eventsBySession.get(sessionId) ?? []).filter(
+        (event) => event.seq > afterSeq && event.type !== 'tool.preparing',
+      )
+      return events.length > maxEvents ? null : events
+    }),
     getLatestSnapshot: vi.fn((sessionId: string) => {
       const events = eventsBySession.get(sessionId) ?? []
       return [...events].reverse().find((event) => event.type === 'turn.snapshot')
     }),
+    getEventsOfTypes: vi.fn((sessionId: string, types: string[], afterSeq: number) =>
+      (eventsBySession.get(sessionId) ?? []).filter((event) => event.seq > afterSeq && types.includes(event.type)),
+    ),
     getLatestSeq: vi.fn((sessionId: string) => {
       const events = eventsBySession.get(sessionId) ?? []
       return events.at(-1)?.seq ?? null
@@ -700,6 +717,88 @@ describe('createWebSocketServer', () => {
     expect(await harness.nextMessage((message) => message.id === 'sset-deprecated')).toMatchObject({
       type: 'error',
       payload: { code: 'DEPRECATED_MESSAGE_TYPE' },
+    })
+
+    await harness.close()
+  })
+
+  it('resumes a session: replays the missed events, then acks with the state', async () => {
+    const eventStore = createEventStore() as any
+    eventStore.append('session-1', { type: 'message.start', data: { messageId: 'assistant-1', role: 'assistant' } })
+    eventStore.append('session-1', { type: 'message.delta', data: { messageId: 'assistant-1', content: 'Hel' } })
+    eventStore.append('session-1', { type: 'message.delta', data: { messageId: 'assistant-1', content: 'lo' } })
+    const sessionManager = createSessionManager({ getDisplayWorkflowExecution: vi.fn(() => null) })
+    sessionManager.session = Object.assign(sessionManager.session, { messages: [] })
+    const harness = await createHarness({ sessionManager, eventStore })
+
+    harness.send({ id: 'resume', type: 'session.load', payload: { sessionId: 'session-1', lastEventSeq: 1 } })
+    const replayed = await harness.nextMessage((message) => message.type === 'chat.delta')
+    const ack = await harness.nextMessage((message) => message.id === 'resume')
+
+    expect(replayed).toMatchObject({
+      payload: { messageId: 'assistant-1', content: 'Hello' },
+      seq: 3,
+      sessionId: 'session-1',
+      replay: true,
+    })
+    expect(ack).toMatchObject({
+      type: 'ack',
+      payload: { sessionId: 'session-1', resume: 'replayed', state: { lastEventSeq: 3, queueState: [] } },
+    })
+    expect((ack.payload['state'] as Record<string, unknown>)['messages']).toBeUndefined()
+    // The resume never folds the whole event log (what makes long sessions slow to load).
+    expect(eventStore.getEventsSinceSnapshot).not.toHaveBeenCalled()
+
+    await harness.close()
+  })
+
+  it('resumes with the path confirmations pending now, not those the client had', async () => {
+    // A confirmation requested while the client was offline is neither
+    // replayed (confirmation events are not streamed through the event log)
+    // nor was it in the resume state: it never showed and the agent waited
+    // for good. One resolved meanwhile stayed shown.
+    const eventStore = createEventStore() as any
+    const pending = (callId: string) => ({
+      type: 'path.confirmation_pending',
+      data: { callId, tool: 'write_file', paths: [`/tmp/${callId}`], workdir: '/w', reason: 'outside_workdir' },
+    })
+    eventStore.append('session-1', pending('answered'))
+    eventStore.append('session-1', pending('waiting'))
+    eventStore.append('session-1', {
+      type: 'path.confirmation_responded',
+      data: { callId: 'answered', approved: true },
+    })
+    const sessionManager = createSessionManager({ getDisplayWorkflowExecution: vi.fn(() => null) })
+    sessionManager.session = Object.assign(sessionManager.session, { messages: [] })
+    const harness = await createHarness({ sessionManager, eventStore })
+
+    harness.send({ id: 'resume', type: 'session.load', payload: { sessionId: 'session-1', lastEventSeq: 1 } })
+    const ack = await harness.nextMessage((message) => message.id === 'resume')
+
+    expect(ack).toMatchObject({ payload: { resume: 'replayed' } })
+    const state = ack.payload['state'] as { pendingConfirmations: Array<{ callId: string }> }
+    expect(state.pendingConfirmations.map((confirmation) => confirmation.callId)).toEqual(['waiting'])
+
+    await harness.close()
+  })
+
+  it('asks for a full reload when the missed events cannot be replayed', async () => {
+    const eventStore = createEventStore() as any
+    eventStore.append('session-1', { type: 'message.start', data: { messageId: 'assistant-1', role: 'assistant' } })
+    eventStore.append('session-1', { type: 'message.delta', data: { messageId: 'assistant-1', content: 'Hi' } })
+    const harness = await createHarness({ eventStore })
+
+    // Client ahead of the store (e.g. the database was reset).
+    harness.send({ id: 'ahead', type: 'session.load', payload: { sessionId: 'session-1', lastEventSeq: 99 } })
+    expect(await harness.nextMessage((message) => message.id === 'ahead')).toMatchObject({
+      payload: { sessionId: 'session-1', resume: 'full' },
+    })
+
+    // Events before the latest snapshot may have been cleaned up.
+    eventStore.getLatestSnapshotSeq.mockReturnValue(2)
+    harness.send({ id: 'stale', type: 'session.load', payload: { sessionId: 'session-1', lastEventSeq: 1 } })
+    expect(await harness.nextMessage((message) => message.id === 'stale')).toMatchObject({
+      payload: { sessionId: 'session-1', resume: 'full' },
     })
 
     await harness.close()

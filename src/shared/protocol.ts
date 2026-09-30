@@ -53,7 +53,13 @@ export interface ClientMessage<T = unknown> {
 // Session payloads
 export interface SessionLoadPayload {
   sessionId: string
-  lastEventSeq?: number // Resume from this sequence number (for reconnection)
+  /**
+   * Resume after a reconnect: the highest event seq the client applied. The
+   * server re-sends the events after it (marked `replay`) and acks with
+   * `resume: 'replayed'` plus the session state without messages, or with
+   * `resume: 'full'` when it cannot (the client then reloads over REST).
+   */
+  lastEventSeq?: number
 }
 
 // Ask user payload
@@ -165,6 +171,7 @@ export interface ServerMessage<T = unknown> {
   payload: T
   seq?: number // Sequence number for event replay/subscription
   sessionId?: string // Session this event belongs to (for multi-session support)
+  replay?: true // Missed event re-sent on resume (session.load with lastEventSeq)
 }
 
 // Payload types for server messages

@@ -390,6 +390,45 @@ export class EventStore {
   }
 
   /**
+   * Events after `afterSeq` for a client resuming the session, or null when
+   * there are more than `maxEvents` of them (the client then reloads instead).
+   *
+   * `tool.preparing` events are left out: they only drive the live preview of
+   * a tool call whose arguments are being streamed, each one carries the whole
+   * accumulated arguments (a file being written: tens of KB, thousands of
+   * times), and tool.call supersedes them. Filtering on the type in SQL also
+   * keeps SQLite from reading their payloads at all.
+   */
+  getReplayEvents(sessionId: string, afterSeq: number, maxEvents: number): StoredEvent[] | null {
+    const filter = `FROM events e
+      LEFT JOIN tombstones t ON e.session_id = t.session_id AND e.seq = t.seq
+      WHERE e.session_id = ? AND e.seq > ? AND e.event_type != 'tool.preparing' AND t.seq IS NULL`
+    const { n } = this.db.prepare(`SELECT COUNT(*) AS n ${filter}`).get(sessionId, afterSeq) as { n: number }
+    if (n > maxEvents) return null
+    const rows = this.db.prepare(`SELECT e.* ${filter} ORDER BY e.seq`).all(sessionId, afterSeq) as EventRow[]
+    return rows.map((row) => this.rowToStoredEvent(row))
+  }
+
+  /**
+   * Events of the given types after `afterSeq`, oldest first. The type filter
+   * runs in SQL, so the other events are not parsed: cheap state for a resume
+   * (e.g. the pending path confirmations) without folding the log.
+   */
+  getEventsOfTypes(sessionId: string, types: string[], afterSeq: number): StoredEvent[] {
+    if (types.length === 0) return []
+    const rows = this.db
+      .prepare(
+        `SELECT e.* FROM events e
+         LEFT JOIN tombstones t ON e.session_id = t.session_id AND e.seq = t.seq
+         WHERE e.session_id = ? AND e.seq > ? AND e.event_type IN (${types.map(() => '?').join(', ')})
+           AND t.seq IS NULL
+         ORDER BY e.seq`,
+      )
+      .all(sessionId, afterSeq, ...types) as EventRow[]
+    return rows.map((row) => this.rowToStoredEvent(row))
+  }
+
+  /**
    * Soft-delete (tombstone) events by sequence number.
    * Tombstoned events are hidden from getEvents but remain in the database.
    *

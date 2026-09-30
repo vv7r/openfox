@@ -964,45 +964,18 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.get('/api/sessions/:id', async (req, res) => {
-    const { getEventStore, combineEventsWithSnapshot } = await import('./events/index.js')
-    const { buildMessagesFromStoredEvents, buildSessionStatsMessages, foldPendingConfirmations } =
-      await import('./events/folding.js')
-    const { computeSessionStatsSummary } = await import('../shared/stats.js')
-    const { getPendingQuestionsForSession } = await import('./tools/index.js')
+    const { buildSessionLoadData } = await import('./session/load-data.js')
     const { getMaxVisibleItems } = await import('./db/settings.js')
-
-    const session = sessionManager.getSession(req.params.id)
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' })
-    }
 
     // Read-only for provider: the stored provider/model is the user's sticky
     // preference and is returned as-is. The effective model (agent override >
     // session preference > default) is derived client-side and at runtime.
-    const eventStore = getEventStore()
-    const { snapshot, events: eventsSinceSnapshot } = eventStore.getEventsSinceSnapshot(req.params.id)
-    const events = combineEventsWithSnapshot(req.params.id, snapshot, eventsSinceSnapshot)
-
     const maxVisibleItems = req.query['full'] === 'true' ? undefined : getMaxVisibleItems() || undefined
-    const { messages, hiddenCount } = buildMessagesFromStoredEvents(events, maxVisibleItems)
-    const sessionStats = computeSessionStatsSummary(buildSessionStatsMessages(events))
-    const contextState = sessionManager.getContextState(req.params.id)
-    const queueState = sessionManager.getQueueState(req.params.id)
-    const pendingQuestions = getPendingQuestionsForSession(req.params.id)
-    const pendingConfirmations = foldPendingConfirmations(events)
-    const activeWorkflowExecution = sessionManager.getDisplayWorkflowExecution(req.params.id)
-
-    res.json({
-      session: toClientSession(session!),
-      messages,
-      hiddenCount,
-      sessionStats,
-      contextState,
-      queueState,
-      pendingQuestions,
-      pendingConfirmations,
-      activeWorkflowExecution,
-    })
+    const data = buildSessionLoadData(sessionManager, req.params.id, { includeMessages: true, maxVisibleItems })
+    if (!data) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+    res.json(data)
   })
 
   // Lightweight read-only status projection for issue #2.

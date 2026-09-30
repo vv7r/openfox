@@ -220,6 +220,60 @@ describe('EventStore', () => {
     })
   })
 
+  describe('getReplayEvents', () => {
+    function appendTurn() {
+      store.append('session-1', { type: 'message.start', data: { messageId: 'm1', role: 'assistant', content: '' } })
+      for (let i = 0; i < 3; i++) {
+        store.append('session-1', {
+          type: 'tool.preparing',
+          data: { messageId: 'm1', index: 0, name: 'write_file', arguments: 'x'.repeat(i + 1) },
+        } as TurnEvent)
+      }
+      store.append('session-1', { type: 'message.delta', data: { messageId: 'm1', content: 'Hi' } })
+    }
+
+    it('returns the events after a seq, without tool.preparing', () => {
+      appendTurn()
+      const events = store.getReplayEvents('session-1', 1, 100)
+      expect(events?.map((e) => [e.seq, e.type])).toEqual([[5, 'message.delta']])
+    })
+
+    it('returns null when more events than allowed are missing (tool.preparing not counted)', () => {
+      appendTurn()
+      expect(store.getReplayEvents('session-1', 0, 1)).toBeNull()
+      expect(store.getReplayEvents('session-1', 0, 2)).toHaveLength(2)
+    })
+  })
+
+  describe('getEventsOfTypes', () => {
+    it('returns only the given types after the seq, in order, without tombstoned ones', () => {
+      store.append('session-1', { type: 'message.delta', data: { messageId: 'm1', content: 'a' } })
+      store.append('session-1', {
+        type: 'path.confirmation_pending',
+        data: { callId: 'c1', tool: 'write_file', paths: ['/x'], workdir: '/w', reason: 'outside_workdir' },
+      } as never)
+      store.append('session-1', { type: 'message.delta', data: { messageId: 'm1', content: 'b' } })
+      store.append('session-1', {
+        type: 'path.confirmation_responded',
+        data: { callId: 'c1', approved: true },
+      } as never)
+      store.append('session-1', {
+        type: 'path.confirmation_pending',
+        data: { callId: 'c2', tool: 'write_file', paths: ['/y'], workdir: '/w', reason: 'outside_workdir' },
+      } as never)
+      store.append('session-2', {
+        type: 'path.confirmation_pending',
+        data: { callId: 'other', tool: 'write_file', paths: ['/z'], workdir: '/w', reason: 'outside_workdir' },
+      } as never)
+      store.tombstoneEvents('session-1', [5])
+
+      const types = ['path.confirmation_pending', 'path.confirmation_responded']
+      expect(store.getEventsOfTypes('session-1', types, 0).map((e) => e.seq)).toEqual([2, 4])
+      expect(store.getEventsOfTypes('session-1', types, 2).map((e) => e.seq)).toEqual([4])
+      expect(store.getEventsOfTypes('session-1', [], 0)).toEqual([])
+    })
+  })
+
   describe('getLatestSeq', () => {
     it('should return the latest seq for a session', () => {
       store.append('session-1', {

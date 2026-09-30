@@ -40,6 +40,7 @@ import type { AgentType } from '../notifications'
 import type { SessionState, PendingQuestion, SessionPane } from './types'
 import { handleGlobalSoundEffects, resolveAgentType } from './sounds'
 import { getBuffer, scheduleStreamingFlush, cancelStreamingFlush } from './streamingBuffer'
+import { acceptSequenced } from './resume'
 import { snapshot } from '../../lib/resourceCache'
 import { mcpServersResource, settingResource, SETTINGS_KEYS, type McpServerInfo } from '../../lib/resources'
 import {
@@ -312,6 +313,8 @@ export function handleServerMessage(
   get: () => SessionState,
 ): void {
   const stateSnapshot = get()
+  // Drop events already applied (or, while resuming, part of the replay).
+  if (!acceptSequenced(message, isLivePane(stateSnapshot, message.sessionId))) return
   handleGlobalSoundEffects(message, stateSnapshot)
 
   const activeSessionId = stateSnapshot.focusedSessionId ?? stateSnapshot.currentSession?.id ?? null
