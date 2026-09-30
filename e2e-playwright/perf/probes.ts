@@ -129,6 +129,22 @@ export const SCROLL_UP_SOURCE = `async (selector) => {
   }
 }`
 
+/**
+ * Lets the bench hide the page: headless Chromium always reports it visible.
+ * Overrides document.hidden / visibilityState and fires visibilitychange, which
+ * is what the app reacts to. `window.__setHidden(true|false)`.
+ */
+export const PAGE_VISIBILITY_SOURCE = `(() => {
+  let hidden = false
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') })
+  window.__setHidden = (value) => {
+    hidden = value
+    document.dispatchEvent(new Event('visibilitychange'))
+    return performance.now()
+  }
+})()`
+
 export interface PageProbeData {
   longTasks: Array<[number, number]>
   frames: number[]

@@ -9,6 +9,7 @@
  *   1. streaming    — one long markdown/code answer streamed end to end
  *   2. reconnect    — WebSocket and REST cut for 30 s mid-stream, then restored
  *   3. long session — ~200 existing messages: first render + fast scroll up
+ *   4. hidden       — the streaming answer arrives while the page is hidden
  *
  * Each run restarts the app. The per-metric median across runs is written to
  * perf-results/<timestamp>-<branch>.json. See README.md.
@@ -30,7 +31,13 @@ import { chromium, type Browser, type BrowserContext, type CDPSession, type Page
 import type { Session } from '../../src/shared/types.js'
 import { buildAnswer, checkpointWord, END_MARKER, BEGIN_MARKER } from './fixture.js'
 import { MOCK_MODEL_ID, startMockOpenAI, type MockOpenAI } from './mock-openai.js'
-import { NETWORK_CUT_SOURCE, PERF_PROBE_SOURCE, SCROLL_UP_SOURCE, type PageProbeData } from './probes.js'
+import {
+  NETWORK_CUT_SOURCE,
+  PAGE_VISIBILITY_SOURCE,
+  PERF_PROBE_SOURCE,
+  SCROLL_UP_SOURCE,
+  type PageProbeData,
+} from './probes.js'
 import { buildLongSession, LAST_MESSAGE_MARKER } from './session-fixture.js'
 import {
   compareMetrics,
@@ -69,8 +76,8 @@ const MOBILE_CONTEXT = {
   serviceWorkers: 'block' as const,
 }
 
-type Scenario = 'streaming' | 'reconnect' | 'longSession'
-const ALL_SCENARIOS: Scenario[] = ['streaming', 'reconnect', 'longSession']
+type Scenario = 'streaming' | 'hidden' | 'reconnect' | 'longSession'
+const ALL_SCENARIOS: Scenario[] = ['streaming', 'hidden', 'reconnect', 'longSession']
 
 /**
  * Server-side settings the app starts with. `fresh`: a new install, nothing
@@ -435,6 +442,48 @@ async function scenarioStreaming(context: BrowserContext, app: App, mock: MockOp
   }
 }
 
+/**
+ * The same answer streamed while the page is hidden (tab in the background),
+ * then shown again: how much work the page does in the background, and how long
+ * it takes to show the finished answer once visible.
+ */
+async function scenarioHidden(context: BrowserContext, app: App, mock: MockOpenAI): Promise<Metrics> {
+  const session = await createSession(app, 'Perf hidden')
+  const { page, cdp } = await openSession(context, app, session.id, [PERF_PROBE_SOURCE, PAGE_VISIBILITY_SOURCE])
+  await delay(1500)
+  await throttle(cdp)
+  const before = await cdpMetrics(cdp)
+
+  const streamDone = mock.nextStreamDone()
+  const start = await startCounting(page)
+  await page.evaluate(() => (window as unknown as { __setHidden(hidden: boolean): number }).__setHidden(true))
+  await sendPrompt(app, session.id, 'perf:stream Walk me through the streaming pipeline.')
+  await streamDone
+  const hiddenEnd = await stopCounting(page)
+  const afterHidden = await cdpMetrics(cdp)
+  const hiddenProbe = await readProbe(page)
+
+  const shownAt = await page.evaluate(() =>
+    (window as unknown as { __setHidden(hidden: boolean): number }).__setHidden(false),
+  )
+  const caughtUpAt = await waitForWord(page, END_MARKER, 60_000)
+  const probe = await readProbe(page)
+  const catchUpTasks = longTaskStats(probe.longTasks, shownAt, caughtUpAt)
+  const hiddenTasks = longTaskStats(hiddenProbe.longTasks, start, hiddenEnd)
+  await mock.waitForIdle()
+
+  return {
+    'hidden.durationMs': Math.round(hiddenEnd - start),
+    'hidden.longTasks.count': hiddenTasks.count,
+    'hidden.longTasks.totalMs': hiddenTasks.totalMs,
+    ...cdpDelta(before, afterHidden, 'hidden'),
+    'hidden.react.commits': hiddenProbe.commits,
+    'hidden.react.renders': Object.values(hiddenProbe.renders).reduce((sum, count) => sum + count, 0),
+    'hidden.catchUpMs': Math.round(caughtUpAt - shownAt),
+    'hidden.catchUp.longTasks.totalMs': catchUpTasks.totalMs,
+  }
+}
+
 async function scenarioReconnect(context: BrowserContext, app: App, mock: MockOpenAI): Promise<Metrics> {
   const session = await createSession(app, 'Perf reconnect')
   const { page, cdp } = await openSession(context, app, session.id, [PERF_PROBE_SOURCE, NETWORK_CUT_SOURCE])
@@ -570,9 +619,11 @@ async function runOnce(options: Options, index: number): Promise<Metrics> {
       const result = await inMobileContext(launched, scenario, (context) =>
         scenario === 'streaming'
           ? scenarioStreaming(context, current, mock)
-          : scenario === 'reconnect'
-            ? scenarioReconnect(context, current, mock)
-            : scenarioLongSession(context, current),
+          : scenario === 'hidden'
+            ? scenarioHidden(context, current, mock)
+            : scenario === 'reconnect'
+              ? scenarioReconnect(context, current, mock)
+              : scenarioLongSession(context, current),
       )
       Object.assign(metrics, result)
     }

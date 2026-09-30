@@ -48,6 +48,7 @@ React DevTools hook (only the fibers that did work in each commit are visited).
 | Scenario      | What happens                                                                                                                  | Key metrics                                                                  |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `streaming`   | One ~2,000-token answer (~20 s) streamed into an open session                                                                 | long tasks, fps avg/min, CDP script/layout/style time, heap, renders         |
+| `hidden`      | The same answer streamed while the page is hidden (simulated `visibilitychange`), then shown again                            | background script time / commits, `catchUpMs` (shown → answer on screen)     |
 | `reconnect`   | A ~4,500-token answer; after 5 s every WebSocket is closed and `fetch` fails for 30 s, then back                              | `reconnectMs` (restore → socket open), `catchUpMs` (restore → UI up to date) |
 | `longSession` | A session with 200 messages (the server window of 100 is served, 100 hidden), then 240 frames of scrolling up at 100 px/frame | `initialRenderMs`, load long tasks, scroll fps and long tasks                |
 
