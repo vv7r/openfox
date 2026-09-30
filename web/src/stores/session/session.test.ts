@@ -1523,6 +1523,45 @@ describe('useSessionStore session isolation', () => {
     expect(result[0]!.messageCount).toBe(15)
   })
 
+  it('buffers chat deltas without notifying store subscribers until the frame flush', async () => {
+    const useSessionStore = await loadSessionStore()
+
+    useSessionStore.setState({
+      currentSession: {
+        id: 'session-1',
+        projectId: 'project-1',
+        workdir: '/tmp/project-1',
+        mode: 'planner',
+        phase: 'plan',
+        isRunning: true,
+        criteria: [],
+        summary: null,
+      } as any,
+      messages: [
+        { id: 'msg-1', role: 'assistant', content: '', timestamp: '2024-01-01T00:00:00.000Z', isStreaming: true },
+      ],
+    })
+    const listener = vi.fn()
+    const unsubscribe = useSessionStore.subscribe(listener)
+
+    for (const content of ['Hello', ' world', '!']) {
+      useSessionStore.getState().handleServerMessage({
+        type: 'chat.delta',
+        sessionId: 'session-1',
+        payload: { messageId: 'msg-1', content },
+      })
+    }
+
+    // ~100 deltas/s: every subscriber re-running its selector per token is
+    // pure overhead, the buffer is what renders.
+    expect(listener).not.toHaveBeenCalled()
+
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(useSessionStore.getState().messages[0]?.content).toBe('Hello world!')
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+  })
+
   it('plays new_message sound on first chat.delta for a new assistant message', async () => {
     const useSessionStore = await loadSessionStore()
 

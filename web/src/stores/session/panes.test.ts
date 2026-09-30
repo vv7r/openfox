@@ -122,6 +122,16 @@ describe('pane helpers', () => {
     expect(next.currentSession?.id).toBe('s1')
   })
 
+  it('updatePane returns the same state when the updater leaves the pane unchanged', () => {
+    // Streaming deltas go through updatePane for their side effects only; a new
+    // state object here makes zustand notify every subscriber on every token.
+    const flat = makeState({ currentSession: session('s1') })
+    expect(updatePane(flat, 's1', (pane) => pane)).toBe(flat)
+
+    const open = makeState({ currentSession: session('s1'), panes: { s2: emptyPane() }, openSessionIds: ['s2'] })
+    expect(updatePane(open, 's2', (pane) => pane)).toBe(open)
+  })
+
   it('updatePane ignores sessions that are neither focused nor open', () => {
     const state = makeState({ currentSession: session('s1') })
     const next = updatePane(state, 's3', (pane) => ({ ...pane, messages: [{ id: 'z' }] as never }))

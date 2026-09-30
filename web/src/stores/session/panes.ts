@@ -113,9 +113,15 @@ export function updatePane(
 ): SessionState {
   const pane = state.panes[sessionId]
   const focused = effectiveFocusedId(state) === sessionId
+  // An updater returning the pane it was given changed nothing: return the same
+  // state so zustand skips notifying subscribers. Streaming deltas rely on this —
+  // they only fill the frame buffer, and would otherwise wake every selector on
+  // every token.
   if (!pane) {
     if (!focused) return state
-    const next = updater(paneFromFlat(state))
+    const flat = paneFromFlat(state)
+    const next = updater(flat)
+    if (next === flat) return state
     return {
       ...state,
       panes: { ...state.panes, [sessionId]: next },
@@ -123,6 +129,7 @@ export function updatePane(
     }
   }
   const next = updater(pane)
+  if (next === pane) return state
   const base = { ...state, panes: { ...state.panes, [sessionId]: next } }
   return focused ? { ...base, ...mirror(next) } : base
 }
