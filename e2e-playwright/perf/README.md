@@ -12,7 +12,14 @@ npm run perf                       # build + 3 runs, median → perf-results/<ti
 npm run perf -- --runs 1 --skip-build --scenarios streaming
 npm run perf -- --compare perf-results/baseline-develop.json
 npm run perf:compare -- perf-results/a.json perf-results/b.json [--renders]
+npm run perf -- --profile existing # theme settings already saved server-side
 ```
+
+`--profile` sets what the server has saved before the run. `fresh` (default):
+nothing, like a new install; the app's first-run writes (theme sync) then happen
+during the measurement, and each settings write re-renders every resource
+consumer, `App` included. `existing`: the theme settings are saved, like for a
+user who already picked a theme. Measure both when a change touches rendering.
 
 ## How it works
 

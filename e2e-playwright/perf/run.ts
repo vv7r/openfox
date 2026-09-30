@@ -17,6 +17,7 @@
  *   npm run perf                        # build + 3 runs
  *   npm run perf -- --runs 1 --skip-build
  *   npm run perf -- --compare perf-results/baseline-develop.json
+ *   npm run perf -- --profile existing   # theme settings already saved (see Profile)
  */
 
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
@@ -71,12 +72,27 @@ const MOBILE_CONTEXT = {
 type Scenario = 'streaming' | 'reconnect' | 'longSession'
 const ALL_SCENARIOS: Scenario[] = ['streaming', 'reconnect', 'longSession']
 
+/**
+ * Server-side settings the app starts with. `fresh`: a new install, nothing
+ * saved (the app's first-run writes, e.g. theme sync, happen during the run).
+ * `existing`: a user who already picked a theme, so those writes are settled.
+ */
+type Profile = 'fresh' | 'existing'
+const PROFILE_SETTINGS: Record<Profile, Array<[string, string]>> = {
+  fresh: [],
+  existing: [
+    ['display.theme', '{"preset":"dark"}'],
+    ['display.followSystemTheme', 'true'],
+  ],
+}
+
 interface Options {
   runs: number
   skipBuild: boolean
   scenarios: Scenario[]
   label: string | null
   compare: string | null
+  profile: Profile
 }
 
 function parseOptions(): Options {
@@ -87,6 +103,7 @@ function parseOptions(): Options {
       scenarios: { type: 'string', default: ALL_SCENARIOS.join(',') },
       label: { type: 'string' },
       compare: { type: 'string' },
+      profile: { type: 'string', default: 'fresh' },
     },
   })
   const scenarios = (values.scenarios ?? '').split(',').filter(Boolean) as Scenario[]
@@ -100,7 +117,13 @@ function parseOptions(): Options {
     scenarios,
     label: values.label ?? null,
     compare: values.compare ?? null,
+    profile: parseProfile(values.profile),
   }
+}
+
+function parseProfile(value: string | undefined): Profile {
+  if (value === 'fresh' || value === 'existing') return value
+  throw new Error(`Unknown profile "${value}" (fresh, existing)`)
 }
 
 function delay(ms: number): Promise<void> {
@@ -157,7 +180,7 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 }
 
 /** Boot the built app with a throwaway HOME: the real ~/.config/openfox is never read nor written. */
-async function bootApp(mock: MockOpenAI): Promise<App> {
+async function bootApp(mock: MockOpenAI, profile: Profile): Promise<App> {
   const root = await mkdtemp(join(tmpdir(), 'openfox-perf-'))
   const home = join(root, 'home')
   const workdir = join(root, 'project')
@@ -225,6 +248,9 @@ async function bootApp(mock: MockOpenAI): Promise<App> {
       method: 'POST',
       body: JSON.stringify({ name: 'Perf mock', url: mock.url, backend: 'vllm', model: MOCK_MODEL_ID, isLocal: true }),
     })
+    for (const [key, value] of PROFILE_SETTINGS[profile]) {
+      await api(serverUrl, `/api/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) })
+    }
     const { project } = await api<{ project: { id: string } }>(serverUrl, '/api/projects', {
       method: 'POST',
       body: JSON.stringify({ name: 'Perf bench', workdir }),
@@ -528,7 +554,7 @@ async function runOnce(options: Options, index: number): Promise<Metrics> {
   let app: App | null = null
   let browser: Browser | null = null
   try {
-    app = await bootApp(mock)
+    app = await bootApp(mock, options.profile)
     const booted = app
     const launched = await chromium.launch({ headless: true, args: ['--enable-precise-memory-info'] })
     browser = launched
@@ -603,6 +629,7 @@ async function main(): Promise<void> {
       viewport: MOBILE_CONTEXT.viewport,
       scenarios: options.scenarios,
       runs: options.runs,
+      profile: options.profile,
     },
     median,
     runs,
