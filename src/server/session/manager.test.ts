@@ -156,6 +156,30 @@ describe('SessionManager', () => {
     expect(manager.getProjectWorkdir(session.id)).toBe(workdir)
   })
 
+  it('reads the workdirs and project id without folding the event log', () => {
+    // The agent loop and the tools ask for these several times per step;
+    // rebuilding the whole session (re-reading every event since the last
+    // snapshot) for a stored column stalled the server on long turns.
+    const session = manager.createSession(projectId)
+    const wsPath = join(workdir, '.worktrees', 'feature-y')
+    updateSessionWorkdir(session.id, workdir, wsPath)
+    const readLog = vi.spyOn(getEventStore(), 'getEventsSinceSnapshot')
+    try {
+      expect(manager.getEffectiveWorkdir(session.id)).toBe(wsPath)
+      expect(manager.getProjectWorkdir(session.id)).toBe(workdir)
+      expect(manager.getSessionProjectId(session.id)).toBe(projectId)
+      expect(readLog).not.toHaveBeenCalled()
+    } finally {
+      readLog.mockRestore()
+    }
+  })
+
+  it('still rejects an unknown session when reading its workdir', () => {
+    expect(() => manager.getEffectiveWorkdir('missing')).toThrow(/missing/)
+    expect(() => manager.getProjectWorkdir('missing')).toThrow(/missing/)
+    expect(manager.getSessionProjectId('missing')).toBeUndefined()
+  })
+
   it('updates mode, phase, and running state while emitting events', () => {
     const session = manager.createSession(projectId, 'Custom Title')
     const allEvents: string[] = []

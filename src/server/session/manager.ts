@@ -368,7 +368,7 @@ export class SessionManager {
    * Uses workspace path when active, otherwise the project workdir.
    */
   getEffectiveWorkdir(sessionId: string): string {
-    const session = this.requireSession(sessionId)
+    const session = this.requireStoredSession(sessionId)
     return session.workspace ?? session.workdir
   }
 
@@ -379,8 +379,27 @@ export class SessionManager {
    * workflows) lives and is managed from.
    */
   getProjectWorkdir(sessionId: string): string {
-    const session = this.requireSession(sessionId)
+    const session = this.requireStoredSession(sessionId)
     return session.workdir
+  }
+
+  /** Project of a session, or undefined when it does not exist. */
+  getSessionProjectId(sessionId: string): string | undefined {
+    return dbGetSession(sessionId)?.projectId
+  }
+
+  /**
+   * The stored session row only (workdir, workspace, project, flags), without
+   * the event-derived state. getSession() re-reads every event since the last
+   * snapshot to rebuild messages, mode and phase: far too costly for callers
+   * that only need a stored column, several times per agent step.
+   */
+  private requireStoredSession(sessionId: string): Session {
+    const session = dbGetSession(sessionId)
+    if (!session) {
+      throw new SessionNotFoundError(sessionId)
+    }
+    return session
   }
 
   // ============================================================================

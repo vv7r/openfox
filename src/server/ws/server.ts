@@ -618,8 +618,7 @@ export function createWebSocketServer(
   }
 
   const broadcastForSession = (sessionId: string, msg: ServerMessage) => {
-    const session = sessionManager.getSession(sessionId)
-    const projectId = session?.projectId
+    const projectId = sessionManager.getSessionProjectId(sessionId)
     for (const [clientWs, client] of clients) {
       if (clientWs.readyState !== WebSocket.OPEN) continue
       if (!isSubscribedToSession(client, sessionId)) continue
@@ -632,7 +631,7 @@ export function createWebSocketServer(
         if (clientWs.readyState !== WebSocket.OPEN) continue
         if (isSubscribedToSession(client, sessionId)) continue
         const clientProjectId = client.activeSessionId
-          ? sessionManager.getSession(client.activeSessionId)?.projectId
+          ? sessionManager.getSessionProjectId(client.activeSessionId)
           : undefined
         if (clientProjectId !== projectId) continue
         const seq = client.lastSentSeq + 1

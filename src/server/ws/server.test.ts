@@ -393,6 +393,10 @@ function createSessionManager(overrides: Record<string, unknown> = {}) {
     getSession: vi.fn(() => session),
     requireSession: vi.fn(() => session),
     getLatestWorkflowExecution: vi.fn(() => null),
+    // Follows getSession, including when a test overrides it.
+    getSessionProjectId: vi.fn(
+      (sessionId: string) => (manager as { getSession: (id: string) => any }).getSession(sessionId)?.projectId,
+    ),
     resolveEffectiveProviderModel: vi.fn((sessionId: string) => {
       const s = (manager as { getSession: (id: string) => any }).getSession(sessionId)
       return { providerId: s?.providerId ?? null, model: s?.providerModel ?? null }

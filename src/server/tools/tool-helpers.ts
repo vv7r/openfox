@@ -226,8 +226,8 @@ export function createTool<TArgs>(name: string, definition: LLMToolDefinition, h
           if (context.onEvent) {
             const projectId =
               context.projectId ??
-              (typeof context.sessionManager?.getSession === 'function'
-                ? context.sessionManager.getSession(context.sessionId)?.projectId
+              (typeof context.sessionManager?.getSessionProjectId === 'function'
+                ? context.sessionManager.getSessionProjectId(context.sessionId)
                 : undefined)
             await requestPathAccess(
               paths,
