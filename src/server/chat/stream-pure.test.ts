@@ -142,6 +142,130 @@ describe('stream-pure', () => {
     expect(preparing[1]!.data.arguments).toBe(fragments[0])
   })
 
+  describe('streamed text coalescing', () => {
+    const doneEvent: LLMStreamEvent = {
+      type: 'done',
+      response: { ...mockResponse, toolCalls: [], finishReason: 'stop' },
+    }
+
+    async function collect(events: LLMStreamEvent[]) {
+      const gen = streamLLMPure({
+        messageId: 'msg-coalesce',
+        systemPrompt: 'system',
+        llmClient: createMockClient(events),
+        messages: [{ role: 'user', content: 'hello' }],
+      })
+      const out: Array<{ type: string; data: { content?: string } }> = []
+      const result = await consumeStreamGenerator(gen, (event) => {
+        out.push(event as never)
+      })
+      return { out, result }
+    }
+
+    it('merges thinking tokens that arrive within the interval: one event, not one per token', async () => {
+      // Each streamed fragment is stored as its own event: a model thinking
+      // for 10 minutes logged ~49k one-token events, and every state load
+      // re-read all of them.
+      const tokens = Array.from({ length: 50 }, (_, i) => `t${i} `)
+      const { out } = await collect([
+        ...tokens.map((content) => ({ type: 'thinking_delta' as const, content })),
+        doneEvent,
+      ])
+
+      const thinking = out.filter((e) => e.type === 'message.thinking')
+      // The first token goes out at once (live view starts instantly), the
+      // rest is merged and flushed at the end of the stream.
+      expect(thinking).toHaveLength(2)
+      expect(thinking[0]!.data.content).toBe('t0 ')
+      expect(thinking.map((e) => e.data.content).join('')).toBe(tokens.join(''))
+    })
+
+    it('merges text tokens the same way', async () => {
+      const tokens = Array.from({ length: 30 }, (_, i) => `w${i} `)
+      const { out } = await collect([...tokens.map((content) => ({ type: 'text_delta' as const, content })), doneEvent])
+
+      const deltas = out.filter((e) => e.type === 'message.delta')
+      expect(deltas).toHaveLength(2)
+      expect(deltas.map((e) => e.data.content).join('')).toBe(tokens.join(''))
+    })
+
+    it('emits again once the interval has passed', async () => {
+      let now = 1_000
+      const spy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+      try {
+        const client = createMockClient([])
+        client.stream = async function* () {
+          yield { type: 'thinking_delta' as const, content: 'a' } // emitted at once
+          yield { type: 'thinking_delta' as const, content: 'b' } // held
+          now += 150
+          yield { type: 'thinking_delta' as const, content: 'c' } // interval passed: 'bc' goes out
+          yield { type: 'thinking_delta' as const, content: 'd' } // held, flushed at the end
+          yield doneEvent
+        }
+        const gen = streamLLMPure({
+          messageId: 'msg-coalesce',
+          systemPrompt: 'system',
+          llmClient: client,
+          messages: [{ role: 'user', content: 'hello' }],
+        })
+        const out: Array<{ type: string; data: { content?: string } }> = []
+        await consumeStreamGenerator(gen, (event) => {
+          out.push(event as never)
+        })
+
+        expect(out.filter((e) => e.type === 'message.thinking').map((e) => e.data.content)).toEqual(['a', 'bc', 'd'])
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('flushes held text before any other event, keeping the stream order', async () => {
+      const { out } = await collect([
+        { type: 'thinking_delta', content: 'think ' },
+        { type: 'thinking_delta', content: 'more' },
+        { type: 'text_delta', content: 'Hello ' },
+        { type: 'text_delta', content: 'world' },
+        { type: 'tool_call_delta', index: 0, name: 'read_file', id: 'call-1' },
+        doneEvent,
+      ])
+
+      expect(out.map((e) => [e.type, e.data.content])).toEqual([
+        ['message.thinking', 'think '],
+        ['message.thinking', 'more'],
+        ['message.delta', 'Hello '],
+        ['message.delta', 'world'],
+        ['tool.preparing', undefined],
+      ])
+    })
+
+    it('flushes held text when the stream is aborted', async () => {
+      const controller = new AbortController()
+      const client = createMockClient([])
+      client.stream = async function* () {
+        yield { type: 'text_delta' as const, content: 'partial ' }
+        yield { type: 'text_delta' as const, content: 'work' }
+        // The AbortError a real HTTP client throws when the signal fires mid-stream
+        controller.abort()
+        throw new Error('The operation was aborted')
+      }
+      const gen = streamLLMPure({
+        messageId: 'msg-coalesce',
+        systemPrompt: 'system',
+        llmClient: client,
+        messages: [{ role: 'user', content: 'hello' }],
+        signal: controller.signal,
+      })
+      const out: Array<{ type: string; data: { content?: string } }> = []
+      const result = await consumeStreamGenerator(gen, (event) => {
+        out.push(event as never)
+      })
+
+      // 'work' was still held when the stream died: it must not be lost.
+      expect(result.aborted).toBe(true)
+      expect(out.filter((e) => e.type === 'message.delta').map((e) => e.data.content)).toEqual(['partial ', 'work'])
+    })
+  })
+
   it('excludes omitted params from result.modelParams so stats reflect the wire request', async () => {
     const client = createMockClient([
       { type: 'text_delta', content: 'hi' },

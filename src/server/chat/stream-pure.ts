@@ -252,6 +252,19 @@ function siblingReadsSamePath(
 const PREPARING_ARG_EMIT_INTERVAL_MS = 250
 
 /**
+ * Minimum delay between two `message.delta` / `message.thinking` events of the
+ * same stream. Every event is stored, and a model emits one per token: a turn
+ * that thought for 10 minutes logged ~49k one-token events, which every state
+ * load until the next snapshot re-read. Tokens inside the interval are merged
+ * into the next event. The first token always goes out at once, and held text
+ * is flushed before any other event and when the stream ends. Thinking is
+ * shown as a collapsed summary, so it tolerates a coarser interval than the
+ * answer text.
+ */
+const TEXT_EMIT_INTERVAL_MS = { 'message.delta': 50, 'message.thinking': 100 } as const
+type StreamedTextType = keyof typeof TEXT_EMIT_INTERVAL_MS
+
+/**
  * Pure generator that streams a SINGLE LLM request and yields TurnEvents live.
  *
  * Does NOT:
@@ -345,6 +358,26 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
   // arguments re-emit the accumulated JSON on every chunk (quadratic in the
   // argument size), so chunks inside the interval are coalesced.
   const lastPreparingArgEmitAt = new Map<number, number>()
+  // Streamed text not emitted yet (see TEXT_EMIT_INTERVAL_MS), and when each
+  // kind last went out.
+  let heldText: { type: StreamedTextType; content: string } | null = null
+  const lastTextEmitAt: Record<StreamedTextType, number> = { 'message.delta': 0, 'message.thinking': 0 }
+  const takeHeldText = (): TurnEvent | null => {
+    if (!heldText) return null
+    const { type, content } = heldText
+    heldText = null
+    lastTextEmitAt[type] = Date.now()
+    return { type, data: { messageId, content } }
+  }
+  // Hold a fragment; returns the events to emit now (held text of the other
+  // kind first, then this kind once its interval has passed).
+  const holdText = (type: StreamedTextType, content: string): TurnEvent[] => {
+    const out: TurnEvent[] = []
+    if (heldText && heldText.type !== type) out.push(takeHeldText()!)
+    heldText = { type, content: (heldText?.content ?? '') + content }
+    if (Date.now() - lastTextEmitAt[type] >= TEXT_EMIT_INTERVAL_MS[type]) out.push(takeHeldText()!)
+    return out
+  }
   let result: Awaited<ReturnType<typeof stream.next>>['value'] = null
   let aborted = false
   let streamError: string | undefined
@@ -374,24 +407,24 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
         break
       }
 
+      // Held text goes out before any other kind of event, keeping the order.
+      if (value.type !== 'text_delta' && value.type !== 'thinking_delta') {
+        const held = takeHeldText()
+        if (held) yield held
+      }
+
       // Transform streaming events to TurnEvents
       switch (value.type) {
         case 'text_delta':
           accumulatedContent += value.content
-          yield {
-            type: 'message.delta',
-            data: { messageId, content: value.content },
-          }
+          yield* holdText('message.delta', value.content)
           break
 
         case 'thinking_delta':
           accumulatedThinking += value.content
           if (thinkingStartedAt === undefined) thinkingStartedAt = Date.now()
           lastThinkingAt = Date.now()
-          yield {
-            type: 'message.thinking',
-            data: { messageId, content: value.content },
-          }
+          yield* holdText('message.thinking', value.content)
           break
 
         case 'tool_call_delta': {
@@ -562,6 +595,11 @@ export async function* streamLLMPure(options: PureStreamOptions): AsyncGenerator
       throw error
     }
   }
+
+  // Whatever ended the stream (done, abort, pattern match, preflight), the
+  // text still held was streamed by the model: it must not be lost.
+  const tail = takeHeldText()
+  if (tail) yield tail
 
   // Preflight rejection takes precedence: the caller turns the path-only tool
   // call into a failed tool result, so the LLM learns the error without having
