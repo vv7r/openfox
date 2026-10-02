@@ -159,6 +159,24 @@ function createSubscriber(
 // EventStore Implementation
 // ============================================================================
 
+interface TailCacheEntry {
+  /** First seq of the tail (latest snapshot seq + 1, or 0 without a snapshot). */
+  fromSeq: number
+  /** Highest seq already read: the next read starts after it. */
+  lastSeq: number
+  events: StoredEvent[]
+  /** Payload bytes held, for the cache budget. */
+  bytes: number
+  dataVersion: number
+}
+
+/** Freeze a cached event deeply in tests, so code mutating shared events fails loudly. */
+function freezeForTests<T>(value: T): T {
+  if (!process.env['VITEST'] || value === null || typeof value !== 'object' || Object.isFrozen(value)) return value
+  for (const key of Object.keys(value)) freezeForTests((value as Record<string, unknown>)[key])
+  return Object.freeze(value)
+}
+
 export class EventStore {
   private db: Database.Database
   private subscribers: Map<string, Set<Subscriber>> = new Map()
@@ -186,6 +204,17 @@ export class EventStore {
   // any realistic caller limit so the cached result is not clipped to whatever
   // limit the first caller happened to request.
   private static readonly PROMPTS_QUERY_LIMIT = 100
+  // Parsed events since the latest snapshot, per session. getSession() and
+  // most session reads fold them, several times per agent step: re-reading and
+  // JSON-parsing the whole tail each time was the main server-side cost of a
+  // long turn. An entry is extended with the events appended since (read by
+  // seq), and dropped by every path that removes or rewrites events. Writes by
+  // another process (PRAGMA data_version) and rows deleted behind the store's
+  // back (a deleted session's ON DELETE CASCADE) force a full re-read.
+  private tailCache: Map<string, TailCacheEntry> = new Map()
+  private tailCacheBytes = 0
+  private static readonly TAIL_CACHE_MAX_ENTRIES = 8
+  private static readonly TAIL_CACHE_MAX_BYTES = 64 * 1024 * 1024
 
   constructor(db: Database.Database) {
     this.db = db
@@ -266,7 +295,7 @@ export class EventStore {
     // Only a snapshot can change the latest snapshot. Evicting the parsed
     // snapshot cache on every append keeps it permanently cold during a turn —
     // deltas, thinking and tool.preparing events stream in continuously.
-    this.invalidateSessionCache(sessionId, { snapshot: event.type === 'turn.snapshot' })
+    this.invalidateSessionCache(sessionId, { snapshot: event.type === 'turn.snapshot', tail: false })
 
     const stored: StoredEvent = {
       seq,
@@ -319,7 +348,10 @@ export class EventStore {
         })
         transaction()
 
-        this.invalidateSessionCache(sessionId, { snapshot: events.some((event) => event.type === 'turn.snapshot') })
+        this.invalidateSessionCache(sessionId, {
+          snapshot: events.some((event) => event.type === 'turn.snapshot'),
+          tail: false,
+        })
 
         // Notify after transaction commits
         for (const stored of results) {
@@ -464,6 +496,8 @@ export class EventStore {
     })
 
     transaction()
+    // A tombstone hides an event already read (possibly the latest snapshot).
+    if (count > 0) this.invalidateSessionCache(sessionId)
     return count
   }
 
@@ -542,7 +576,10 @@ export class EventStore {
    * cleanup paths must invalidate unconditionally — they can remove the row the
    * cache entry was built from.
    */
-  private invalidateSessionCache(sessionId: string, opts: { snapshot?: boolean } = {}): void {
+  private invalidateSessionCache(sessionId: string, opts: { snapshot?: boolean; tail?: boolean } = {}): void {
+    // An append only adds events after the cached tail, which the next read
+    // picks up by seq; every other write can remove or rewrite cached events.
+    if (opts.tail !== false) this.dropTail(sessionId)
     if (opts.snapshot !== false) {
       const entry = this.snapshotCache.get(sessionId)
       if (entry) {
@@ -553,9 +590,18 @@ export class EventStore {
     this.promptsCache.delete(sessionId)
   }
 
+  private dropTail(sessionId: string): void {
+    const entry = this.tailCache.get(sessionId)
+    if (!entry) return
+    this.tailCacheBytes -= entry.bytes
+    this.tailCache.delete(sessionId)
+  }
+
   private clearSnapshotCache(): void {
     this.snapshotCache.clear()
     this.snapshotCacheBytes = 0
+    this.tailCache.clear()
+    this.tailCacheBytes = 0
     this.promptsCache.clear()
   }
 
@@ -733,22 +779,77 @@ export class EventStore {
     events: StoredEvent[]
   } {
     const snapshotEvent = this.getLatestSnapshot(sessionId)
+    // Without a snapshot the tail is the whole log (seqs start at 1).
+    const events = this.readTail(sessionId, snapshotEvent ? snapshotEvent.seq + 1 : 0)
+    return { snapshot: snapshotEvent?.data, events }
+  }
 
-    if (!snapshotEvent) {
-      // No snapshot, return all events
-      return {
-        snapshot: undefined,
-        events: this.getEvents(sessionId),
-      }
+  /**
+   * Events from `fromSeq` on, served from the tail cache when it is still
+   * valid, extended with the events appended since. Returns a fresh array: the
+   * cached one is never handed out.
+   */
+  private readTail(sessionId: string, fromSeq: number): StoredEvent[] {
+    const dataVersion = this.db.pragma('data_version', { simple: true }) as number
+    const latestSeq = this.getLatestSeq(sessionId) ?? 0
+    let entry = this.tailCache.get(sessionId)
+    if (entry && (entry.fromSeq !== fromSeq || entry.dataVersion !== dataVersion || latestSeq < entry.lastSeq)) {
+      this.dropTail(sessionId)
+      entry = undefined
     }
 
-    // Get events AFTER the snapshot (seq > snapshotEvent.seq)
-    const events = this.getEvents(sessionId, snapshotEvent.seq + 1)
-
-    return {
-      snapshot: snapshotEvent.data,
-      events,
+    if (entry && latestSeq === entry.lastSeq) {
+      // Most recently used last, for the eviction order.
+      this.tailCache.delete(sessionId)
+      this.tailCache.set(sessionId, entry)
+      return entry.events.slice()
     }
+
+    const readFrom = entry ? entry.lastSeq + 1 : fromSeq
+    const rows = this.db
+      .prepare(
+        `SELECT e.* FROM events e
+         LEFT JOIN tombstones t ON e.session_id = t.session_id AND e.seq = t.seq
+         WHERE e.session_id = ? AND e.seq >= ? AND t.seq IS NULL
+         ORDER BY e.seq`,
+      )
+      .all(sessionId, readFrom) as EventRow[]
+    let bytes = 0
+    let lastSeq = Math.max(latestSeq, readFrom - 1)
+    const fresh: StoredEvent[] = []
+    for (const row of rows) {
+      bytes += row.payload.length
+      lastSeq = Math.max(lastSeq, row.seq)
+      fresh.push(freezeForTests(this.rowToStoredEvent(row)))
+    }
+
+    if (entry) {
+      this.tailCache.delete(sessionId)
+      for (const event of fresh) entry.events.push(event)
+      entry.bytes += bytes
+      entry.lastSeq = lastSeq
+      this.tailCacheBytes += bytes
+    } else {
+      entry = { fromSeq, lastSeq, events: fresh, bytes, dataVersion }
+      this.tailCacheBytes += bytes
+    }
+    this.tailCache.set(sessionId, entry)
+
+    // Budget: a tail too large for the cache is served uncached, as before.
+    if (entry.bytes > EventStore.TAIL_CACHE_MAX_BYTES) {
+      const events = entry.events.slice()
+      this.dropTail(sessionId)
+      return events
+    }
+    while (
+      this.tailCache.size > EventStore.TAIL_CACHE_MAX_ENTRIES ||
+      this.tailCacheBytes > EventStore.TAIL_CACHE_MAX_BYTES
+    ) {
+      const oldest = this.tailCache.keys().next().value
+      if (oldest === undefined || oldest === sessionId) break
+      this.dropTail(oldest)
+    }
+    return entry.events.slice()
   }
 
   /**

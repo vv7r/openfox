@@ -2164,6 +2164,108 @@ describe('EventStore - Event Cleanup', () => {
     })
   })
 
+  describe('events-since-snapshot cache', () => {
+    // Every getSession() re-read and JSON-parsed every event since the latest
+    // snapshot, several times per agent step: the main server-side cost of a
+    // long turn. The parsed tail is now kept and extended with new events only.
+    const delta = (content: string): TurnEvent => ({ type: 'message.delta', data: { messageId: 'm1', content } })
+    const contents = (events: StoredEvent[]) => events.map((e) => (e.data as { content?: string }).content)
+
+    it('does not re-parse events that were already read', () => {
+      for (let i = 0; i < 5; i++) store.append('session-1', delta(`d${i}`))
+      store.getEventsSinceSnapshot('session-1')
+
+      const parse = vi.spyOn(JSON, 'parse')
+      try {
+        const again = store.getEventsSinceSnapshot('session-1')
+        expect(contents(again.events)).toEqual(['d0', 'd1', 'd2', 'd3', 'd4'])
+        expect(parse).not.toHaveBeenCalled()
+
+        store.append('session-1', delta('d5'))
+        const extended = store.getEventsSinceSnapshot('session-1')
+        expect(contents(extended.events)).toEqual(['d0', 'd1', 'd2', 'd3', 'd4', 'd5'])
+        // Only the new event is read and parsed.
+        expect(parse).toHaveBeenCalledTimes(1)
+      } finally {
+        parse.mockRestore()
+      }
+    })
+
+    it('restarts from the new snapshot when one is appended', () => {
+      store.append('session-1', delta('before'))
+      store.getEventsSinceSnapshot('session-1')
+      store.append('session-1', {
+        type: 'turn.snapshot',
+        data: {
+          mode: 'planner',
+          phase: 'plan',
+          isRunning: false,
+          messages: [],
+          criteria: [],
+          snapshotSeq: 1,
+          snapshotAt: 0,
+        } as never,
+      })
+      store.append('session-1', delta('after'))
+
+      const { snapshot, events } = store.getEventsSinceSnapshot('session-1')
+      expect(snapshot).toBeDefined()
+      expect(contents(events)).toEqual(['after'])
+    })
+
+    it('reflects tombstones and in-place payload updates', () => {
+      for (let i = 0; i < 3; i++) store.append('session-1', delta(`d${i}`))
+      store.getEventsSinceSnapshot('session-1')
+
+      store.tombstoneEvents('session-1', [2])
+      expect(contents(store.getEventsSinceSnapshot('session-1').events)).toEqual(['d0', 'd2'])
+
+      store.updateEventPayload('session-1', 3, { messageId: 'm1', content: 'edited' })
+      expect(contents(store.getEventsSinceSnapshot('session-1').events)).toEqual(['d0', 'edited'])
+    })
+
+    it('reflects deleted events (session deleted, rewind)', () => {
+      for (let i = 0; i < 3; i++) store.append('session-1', delta(`d${i}`))
+      store.getEventsSinceSnapshot('session-1')
+
+      // Bypasses the store, like the ON DELETE CASCADE of a deleted session.
+      db.prepare('DELETE FROM events WHERE session_id = ?').run('session-1')
+      expect(store.getEventsSinceSnapshot('session-1').events).toEqual([])
+    })
+
+    it('hands each caller its own array', () => {
+      store.append('session-1', delta('d0'))
+      const first = store.getEventsSinceSnapshot('session-1').events
+      first.push(first[0]!)
+      first.reverse()
+
+      expect(contents(store.getEventsSinceSnapshot('session-1').events)).toEqual(['d0'])
+    })
+
+    it('sees writes made by another connection to the same database', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'openfox-tail-cache-'))
+      try {
+        const file = join(dir, 'events.db')
+        const mine = new Database(file)
+        const fileStore = new EventStore(mine)
+        for (let i = 0; i < 3; i++) fileStore.append('session-1', delta(`d${i}`))
+        fileStore.getEventsSinceSnapshot('session-1')
+
+        // Another OpenFox process rewrites an event this one already parsed.
+        const other = new Database(file)
+        other
+          .prepare('UPDATE events SET payload = ? WHERE session_id = ? AND seq = ?')
+          .run(JSON.stringify({ messageId: 'm1', content: 'theirs' }), 'session-1', 2)
+        other.close()
+
+        expect(contents(fileStore.getEventsSinceSnapshot('session-1').events)).toEqual(['d0', 'theirs', 'd2'])
+        mine.close()
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+  })
+
   describe('migrateSnapshotStreams', () => {
     function snapshotWithStreams(): SessionSnapshot {
       return {
