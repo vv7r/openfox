@@ -7,7 +7,13 @@
  *
  *   - `perf:stream` → the streaming scenario answer
  *   - `perf:long`   → a longer answer for the reconnection scenario
+ *   - `perf:seed`   → scripted read_file steps that give a session its history
+ *   - `perf:agent`  → scripted agent steps (thinking, text, streamed write_file)
  *   - anything else → a one-line answer (title generation, warm-up, ...)
+ *
+ * The keyword of the latest prompt that has one wins, so a session seeded with
+ * `perf:seed` can then stream a `perf:stream` answer. Scripted turns pick their
+ * step from the number of tool results since that prompt (see agent-script.ts).
  *
  * Emission is paced against wall time rather than a fixed interval, so a late
  * timer catches up instead of stretching the stream: the average rate stays
@@ -17,12 +23,20 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { PerfAnswer } from './fixture.js'
+import type { ScriptedAnswer, TurnScript } from './agent-script.js'
 
 export const MOCK_MODEL_ID = 'perf-mock'
 
 export interface MockAnswers {
   stream: PerfAnswer
   long: PerfAnswer
+}
+
+export interface MockScripts {
+  seed?: TurnScript
+  agent?: TurnScript
+  /** Rate of the seed turn: history only needs to exist, not to stream slowly. */
+  seedTokensPerSecond?: number
 }
 
 export interface MockOpenAI {
@@ -42,25 +56,38 @@ interface ChatRequest {
   messages?: Array<{ role: string; content?: unknown }>
 }
 
+const KEYWORDS = ['perf:stream', 'perf:long', 'perf:seed', 'perf:agent'] as const
+type Keyword = (typeof KEYWORDS)[number]
+
+function messageText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((part: unknown) =>
+      typeof part === 'object' && part !== null && 'text' in part ? String((part as { text: unknown }).text) : '',
+    )
+    .join(' ')
+}
+
 /**
- * All user-message text of the request. The keyword is searched across every
+ * Keyword of the latest user message that has one, and the number of tool
+ * results after it (the step of a scripted turn). Searched backwards over every
  * user message: OpenFox appends system-generated user messages (agent
  * definition, reminders) after the prompt, so the last one is not the prompt.
  */
-function userText(request: ChatRequest): string {
-  return (request.messages ?? [])
-    .filter((message) => message.role === 'user')
-    .map((message) => {
-      const content = message.content
-      if (typeof content === 'string') return content
-      if (!Array.isArray(content)) return ''
-      return content
-        .map((part: unknown) =>
-          typeof part === 'object' && part !== null && 'text' in part ? String((part as { text: unknown }).text) : '',
-        )
-        .join(' ')
-    })
-    .join('\n')
+function latestPrompt(request: ChatRequest): { keyword: Keyword | null; step: number } {
+  const messages = request.messages ?? []
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]!
+    if (message.role !== 'user') continue
+    const text = messageText(message.content)
+    const keyword = KEYWORDS.find((k) => text.includes(k))
+    if (keyword) {
+      const step = messages.slice(index + 1).filter((m) => m.role === 'tool').length
+      return { keyword, step }
+    }
+  }
+  return { keyword: null, step: 0 }
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -79,7 +106,11 @@ function chunkPayload(id: string, created: number, delta: Record<string, unknown
   })}\n\n`
 }
 
-export async function startMockOpenAI(answers: MockAnswers, tokensPerSecond = 100): Promise<MockOpenAI> {
+export async function startMockOpenAI(
+  answers: MockAnswers,
+  tokensPerSecond = 100,
+  scripts: MockScripts = {},
+): Promise<MockOpenAI> {
   let active = 0
   let lastCheckpoint = 0
   let idleWaiters: Array<() => void> = []
@@ -147,6 +178,48 @@ export async function startMockOpenAI(answers: MockAnswers, tokensPerSecond = 10
     }, 10)
   }
 
+  /** Stream one step of a scripted turn, paced like the answers. */
+  const streamScripted = (res: ServerResponse, answer: ScriptedAnswer, rate: number) => {
+    const id = `chatcmpl-perf-${Date.now()}`
+    const created = Math.floor(Date.now() / 1000)
+    const startedAt = Date.now()
+    active++
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
+    res.write(chunkPayload(id, created, { role: 'assistant', content: '' }, null))
+    let sent = 0
+    let closed = false
+    const finish = () => {
+      if (closed) return
+      closed = true
+      clearInterval(timer)
+      active--
+      settleIdle()
+    }
+    res.on('close', finish)
+    const timer = setInterval(() => {
+      const due = Math.min(answer.deltas.length, Math.floor(((Date.now() - startedAt) * rate) / 1000) + 1)
+      while (sent < due) res.write(chunkPayload(id, created, answer.deltas[sent++]!, null))
+      if (sent < answer.deltas.length) return
+      res.write(chunkPayload(id, created, {}, answer.finish))
+      res.write(
+        `data: ${JSON.stringify({
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: MOCK_MODEL_ID,
+          choices: [],
+          usage: {
+            prompt_tokens: 1000,
+            completion_tokens: answer.deltas.length,
+            total_tokens: 1000 + answer.deltas.length,
+          },
+        })}\n\n`,
+      )
+      res.end('data: [DONE]\n\n')
+      finish()
+    }, 10)
+  }
+
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     const path = (req.url ?? '').split('?')[0] ?? ''
     if (process.env['PERF_DEBUG']) console.log(`[mock] ${req.method} ${path}`)
@@ -162,12 +235,14 @@ export async function startMockOpenAI(answers: MockAnswers, tokensPerSecond = 10
     }
     if (req.method === 'POST' && path.endsWith('/chat/completions')) {
       const request = JSON.parse((await readBody(req)) || '{}') as ChatRequest
-      const prompt = userText(request)
-      const answer = prompt.includes('perf:long')
-        ? answers.long
-        : prompt.includes('perf:stream')
-          ? answers.stream
-          : null
+      const { keyword, step } = latestPrompt(request)
+      const script = keyword === 'perf:seed' ? scripts.seed : keyword === 'perf:agent' ? scripts.agent : undefined
+      if (script && request.stream) {
+        const rate = keyword === 'perf:seed' ? (scripts.seedTokensPerSecond ?? 5000) : tokensPerSecond
+        streamScripted(res, script(step), rate)
+        return
+      }
+      const answer = keyword === 'perf:long' ? answers.long : keyword === 'perf:stream' ? answers.stream : null
       const text = 'Perf bench session'
       if (request.stream) {
         streamAnswer(res, answer, text)

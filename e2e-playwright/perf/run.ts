@@ -10,6 +10,13 @@
  *   2. reconnect    — WebSocket and REST cut for 30 s mid-stream, then restored
  *   3. long session — ~200 existing messages: first render + fast scroll up
  *   4. hidden       — the streaming answer arrives while the page is hidden
+ *   5. agent (opt-in) — a scripted multi-step agent turn (thinking, text,
+ *                     streamed write_file per step) with the page reopened or
+ *                     the network cut every 45 s; also samples server latency
+ *
+ * --context <tokens> first gives each scenario's session a real history of
+ * about that many tokens (a fast scripted turn of read_file calls), so the
+ * scenarios run against a long conversation, server side included.
  *
  * Each run restarts the app. The per-metric median across runs is written to
  * perf-results/<timestamp>-<branch>.json. See README.md.
@@ -19,9 +26,12 @@
  *   npm run perf -- --runs 1 --skip-build
  *   npm run perf -- --compare perf-results/baseline-develop.json
  *   npm run perf -- --profile existing   # theme settings already saved (see Profile)
+ *   npm run perf -- --context 50000      # ~50k tokens of history in each session
+ *   npm run perf -- --scenarios agent --agent-steps 40
  */
 
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import Database from 'better-sqlite3'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { cpus, tmpdir, totalmem } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -31,6 +41,7 @@ import { chromium, type Browser, type BrowserContext, type CDPSession, type Page
 import type { Session } from '../../src/shared/types.js'
 import { buildAnswer, checkpointWord, END_MARKER, BEGIN_MARKER } from './fixture.js'
 import { MOCK_MODEL_ID, startMockOpenAI, type MockOpenAI } from './mock-openai.js'
+import { agentScript, seedFileContent, seedFileCount, seedFilePath, seedScript } from './agent-script.js'
 import {
   NETWORK_CUT_SOURCE,
   PAGE_VISIBILITY_SOURCE,
@@ -76,8 +87,14 @@ const MOBILE_CONTEXT = {
   serviceWorkers: 'block' as const,
 }
 
-type Scenario = 'streaming' | 'hidden' | 'reconnect' | 'longSession'
+type Scenario = 'streaming' | 'hidden' | 'reconnect' | 'longSession' | 'agent'
+/** Run by default. `agent` takes minutes per run: opt-in through --scenarios. */
 const ALL_SCENARIOS: Scenario[] = ['streaming', 'hidden', 'reconnect', 'longSession']
+const KNOWN_SCENARIOS: Scenario[] = [...ALL_SCENARIOS, 'agent']
+/** Agent scenario: thinking tokens per step, and how often the page is reopened or cut. */
+const AGENT_THINK_TOKENS = 1000
+const AGENT_RETURN_EVERY_MS = 45_000
+const AGENT_OUTAGE_MS = 20_000
 
 /**
  * Server-side settings the app starts with. `fresh`: a new install, nothing
@@ -100,6 +117,9 @@ interface Options {
   label: string | null
   compare: string | null
   profile: Profile
+  /** Tokens of history given to each scenario's session before it runs (0: none). */
+  context: number
+  agentSteps: number
 }
 
 function parseOptions(): Options {
@@ -111,12 +131,14 @@ function parseOptions(): Options {
       label: { type: 'string' },
       compare: { type: 'string' },
       profile: { type: 'string', default: 'fresh' },
+      context: { type: 'string', default: '0' },
+      'agent-steps': { type: 'string', default: '24' },
     },
   })
   const scenarios = (values.scenarios ?? '').split(',').filter(Boolean) as Scenario[]
   for (const scenario of scenarios) {
-    if (!ALL_SCENARIOS.includes(scenario))
-      throw new Error(`Unknown scenario "${scenario}" (${ALL_SCENARIOS.join(', ')})`)
+    if (!KNOWN_SCENARIOS.includes(scenario))
+      throw new Error(`Unknown scenario "${scenario}" (${KNOWN_SCENARIOS.join(', ')})`)
   }
   return {
     runs: Math.max(1, Number(values.runs) || 1),
@@ -125,6 +147,8 @@ function parseOptions(): Options {
     label: values.label ?? null,
     compare: values.compare ?? null,
     profile: parseProfile(values.profile),
+    context: Math.max(0, Number(values.context) || 0),
+    agentSteps: Math.max(1, Number(values['agent-steps']) || 1),
   }
 }
 
@@ -170,6 +194,10 @@ function build(): void {
 interface App {
   serverUrl: string
   projectId: string
+  /** On-disk database (read-only access for the agent scenario's log size and turn state). */
+  dbPath: string
+  /** Tokens of history to give each scenario's session (see seedContext). */
+  contextTokens: number
   stop(): Promise<void>
 }
 
@@ -187,13 +215,22 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 }
 
 /** Boot the built app with a throwaway HOME: the real ~/.config/openfox is never read nor written. */
-async function bootApp(mock: MockOpenAI, profile: Profile): Promise<App> {
+async function bootApp(mock: MockOpenAI, profile: Profile, contextTokens: number): Promise<App> {
   const root = await mkdtemp(join(tmpdir(), 'openfox-perf-'))
   const home = join(root, 'home')
   const workdir = join(root, 'project')
   await mkdir(join(home, 'openfox'), { recursive: true })
   await mkdir(workdir, { recursive: true })
   await writeFile(join(workdir, 'README.md'), '# Perf bench project\n')
+  // Files the seed turn reads (see seedContext).
+  const seedFiles = seedFileCount(contextTokens)
+  if (seedFiles > 0) await mkdir(join(workdir, 'seed'), { recursive: true })
+  for (let index = 0; index < seedFiles; index++) {
+    await writeFile(join(workdir, seedFilePath(index)), seedFileContent(index))
+  }
+  // On disk, like a real install: the event log's write and read costs are part
+  // of what the scenarios measure.
+  const dbPath = join(home, 'sessions.db')
   // A pre-existing config keeps the CLI out of its interactive first-run wizard.
   await writeFile(
     join(home, 'openfox', 'config.json'),
@@ -210,7 +247,7 @@ async function bootApp(mock: MockOpenAI, profile: Profile): Promise<App> {
       XDG_CONFIG_HOME: home,
       XDG_DATA_HOME: home,
       OPENFOX_PORT: String(port),
-      OPENFOX_DB_PATH: ':memory:',
+      OPENFOX_DB_PATH: dbPath,
       OPENFOX_WORKDIR: workdir,
       OPENFOX_LLM_URL: mock.url,
       OPENFOX_MODEL_NAME: MOCK_MODEL_ID,
@@ -262,7 +299,7 @@ async function bootApp(mock: MockOpenAI, profile: Profile): Promise<App> {
       method: 'POST',
       body: JSON.stringify({ name: 'Perf bench', workdir }),
     })
-    return { serverUrl, projectId: project.id, stop }
+    return { serverUrl, projectId: project.id, dbPath, contextTokens, stop }
   } catch (error) {
     await stop()
     throw error
@@ -282,6 +319,47 @@ async function sendPrompt(app: App, sessionId: string, content: string): Promise
     method: 'POST',
     body: JSON.stringify({ content }),
   })
+}
+
+function readDb<T>(app: App, read: (db: Database.Database) => T): T {
+  const db = new Database(app.dbPath, { readonly: true, fileMustExist: true })
+  try {
+    return read(db)
+  } finally {
+    db.close()
+  }
+}
+
+function isRunning(app: App, sessionId: string): boolean {
+  return readDb(app, (db) => {
+    const row = db.prepare('SELECT is_running FROM sessions WHERE id = ?').get(sessionId) as
+      { is_running: number } | undefined
+    return row?.is_running === 1
+  })
+}
+
+/** Wait until the session's turn has started and then finished. */
+async function waitForTurnEnd(app: App, sessionId: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  let started = false
+  while (Date.now() < deadline) {
+    const running = isRunning(app, sessionId)
+    if (running) started = true
+    else if (started) return
+    await delay(250)
+  }
+  throw new Error(`Turn of session ${sessionId} did not finish within ${timeoutMs} ms`)
+}
+
+/**
+ * Give a session a real history of about `app.contextTokens` tokens before a
+ * scenario runs in it: a fast scripted turn of read_file calls on large files,
+ * stored by the server like any turn (events, snapshot, messages).
+ */
+async function seedContext(app: App, sessionId: string): Promise<void> {
+  if (app.contextTokens <= 0) return
+  await sendPrompt(app, sessionId, `perf:seed Read every file under seed/ (${app.contextTokens} tokens).`)
+  await waitForTurnEnd(app, sessionId, 600_000)
 }
 
 interface OpenedPage {
@@ -410,6 +488,7 @@ function renderMetrics(probe: PageProbeData, prefix: string): Metrics {
 
 async function scenarioStreaming(context: BrowserContext, app: App, mock: MockOpenAI): Promise<Metrics> {
   const session = await createSession(app, 'Perf streaming')
+  await seedContext(app, session.id)
   const { page, cdp } = await openSession(context, app, session.id, [PERF_PROBE_SOURCE])
   await delay(1500)
   await throttle(cdp)
@@ -449,6 +528,7 @@ async function scenarioStreaming(context: BrowserContext, app: App, mock: MockOp
  */
 async function scenarioHidden(context: BrowserContext, app: App, mock: MockOpenAI): Promise<Metrics> {
   const session = await createSession(app, 'Perf hidden')
+  await seedContext(app, session.id)
   const { page, cdp } = await openSession(context, app, session.id, [PERF_PROBE_SOURCE, PAGE_VISIBILITY_SOURCE])
   await delay(1500)
   await throttle(cdp)
@@ -486,6 +566,7 @@ async function scenarioHidden(context: BrowserContext, app: App, mock: MockOpenA
 
 async function scenarioReconnect(context: BrowserContext, app: App, mock: MockOpenAI): Promise<Metrics> {
   const session = await createSession(app, 'Perf reconnect')
+  await seedContext(app, session.id)
   const { page, cdp } = await openSession(context, app, session.id, [PERF_PROBE_SOURCE, NETWORK_CUT_SOURCE])
   await delay(1500)
   await throttle(cdp)
@@ -519,6 +600,150 @@ async function scenarioReconnect(context: BrowserContext, app: App, mock: MockOp
     'reconnect.longTasks.count': tasks.count,
     'reconnect.longTasks.totalMs': tasks.totalMs,
     'reconnect.longTasks.maxMs': tasks.maxMs,
+  }
+}
+
+/**
+ * A scripted agent turn (--agent-steps steps of thinking, text, streamed write_file),
+ * with the page reopened in a new tab or the network cut for 20 s, alternately,
+ * every 45 s. Server latency is sampled every 100 ms all along: a request that
+ * takes long means the server's event loop was blocked (event log writes and
+ * reads), which stalls every client.
+ */
+async function scenarioAgent(context: BrowserContext, app: App): Promise<Metrics> {
+  const session = await createSession(app, 'Perf agent')
+  // Autonomous builder: write_file runs without asking.
+  await api(app.serverUrl, `/api/sessions/${session.id}/night-mode`, {
+    method: 'PUT',
+    body: JSON.stringify({ nightMode: true }),
+  })
+  await api(app.serverUrl, `/api/sessions/${session.id}/mode`, {
+    method: 'PUT',
+    body: JSON.stringify({ mode: 'builder' }),
+  })
+  await seedContext(app, session.id)
+  const { page, cdp } = await openSession(context, app, session.id, [PERF_PROBE_SOURCE, NETWORK_CUT_SOURCE])
+  await delay(1500)
+  await throttle(cdp)
+  const before = await cdpMetrics(cdp)
+
+  const latencies: number[] = []
+  let sampling = true
+  const sampler = (async () => {
+    while (sampling) {
+      const sentAt = Date.now()
+      await fetch(`${app.serverUrl}/api/health`, { signal: AbortSignal.timeout(30_000) }).catch(() => {})
+      latencies.push(Date.now() - sentAt)
+      await delay(100)
+    }
+  })()
+  const logSize = () =>
+    readDb(app, (db) =>
+      db
+        .prepare(
+          'SELECT COUNT(*) AS events, COALESCE(SUM(LENGTH(payload)), 0) AS bytes FROM events WHERE session_id = ?',
+        )
+        .get(session.id),
+    ) as { events: number; bytes: number }
+  const baseline = logSize()
+  let peakEvents = 0
+  let peakBytes = 0
+
+  const sessionPath = `/api/sessions/${session.id}`
+  const url = `${app.serverUrl}/p/${app.projectId}/s/${session.id}`
+  const reopenMs: number[] = []
+  const cutMs: number[] = []
+  const start = await startCounting(page)
+  await sendPrompt(app, session.id, 'perf:agent Write the project modules, one file per step.')
+  const turnStart = Date.now()
+  let nextReturn = turnStart + AGENT_RETURN_EVERY_MS
+  let reopenNext = true
+  let started = false
+  while (Date.now() - turnStart < 60 * 60_000) {
+    await delay(1000)
+    const size = logSize()
+    peakEvents = Math.max(peakEvents, size.events - baseline.events)
+    peakBytes = Math.max(peakBytes, size.bytes - baseline.bytes)
+    const running = isRunning(app, session.id)
+    if (running) started = true
+    else if (started) break
+    if (Date.now() < nextReturn) continue
+
+    if (reopenNext) {
+      // Come back to the session in a new tab: time until its content shows.
+      const openedAt = Date.now()
+      // Same mobile CPU as the session's page.
+      const tab = await context.newPage()
+      await throttle(await context.newCDPSession(tab))
+      await tab.goto(url, { waitUntil: 'domcontentloaded' })
+      await tab.waitForFunction(
+        (selector) => (document.querySelector(selector)?.textContent?.length ?? 0) > 50,
+        CHAT_SCROLL_SELECTOR,
+        { timeout: 180_000, polling: 100 },
+      )
+      reopenMs.push(Date.now() - openedAt)
+      await tab.close()
+    } else {
+      // Network cut on the session's page, then back: time until it is up to
+      // date again (resume acknowledged, or the full reload done).
+      let caughtUpAt = 0
+      const onRequestFinished = (request: { url(): string }) => {
+        if (!caughtUpAt && new URL(request.url()).pathname === sessionPath) caughtUpAt = Date.now()
+      }
+      const onSocket = (socket: {
+        on(event: 'framereceived', fn: (frame: { payload: string | Buffer }) => void): void
+      }) =>
+        socket.on('framereceived', (frame) => {
+          const payload = String(frame.payload)
+          if (!caughtUpAt && payload.includes('"type":"ack"') && payload.includes('"resume":"replayed"'))
+            caughtUpAt = Date.now()
+        })
+      page.on('requestfinished', onRequestFinished)
+      page.on('websocket', onSocket as never)
+      await page.evaluate(() => (window as unknown as { __net: { cut(): void } }).__net.cut())
+      await delay(AGENT_OUTAGE_MS)
+      const restoredAt = Date.now()
+      await page.evaluate(() => (window as unknown as { __net: { restore(): void } }).__net.restore())
+      while (!caughtUpAt && Date.now() - restoredAt < 120_000) await delay(50)
+      page.off('requestfinished', onRequestFinished)
+      page.off('websocket', onSocket as never)
+      cutMs.push(caughtUpAt ? caughtUpAt - restoredAt : 120_000)
+    }
+    reopenNext = !reopenNext
+    nextReturn = Date.now() + AGENT_RETURN_EVERY_MS
+  }
+  const turnMs = Date.now() - turnStart
+  const end = await stopCounting(page)
+  const after = await cdpMetrics(cdp)
+  const probe = await readProbe(page)
+  sampling = false
+  await sampler
+
+  const minutes = turnMs / 60_000
+  const sorted = [...latencies].sort((a, b) => a - b)
+  const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] ?? 0
+  const median = (values: number[]) => {
+    const ordered = [...values].sort((a, b) => a - b)
+    return ordered.length ? (ordered[Math.floor((ordered.length - 1) / 2)] ?? 0) : -1
+  }
+  const perMin = (value: number) => Math.round((value / minutes) * 100) / 100
+  return {
+    'agent.turnMs': turnMs,
+    'agent.log.peakEvents': peakEvents,
+    'agent.log.peakMb': Math.round(peakBytes / 1e5) / 10,
+    'agent.server.latency.p50Ms': at(0.5),
+    'agent.server.latency.p95Ms': at(0.95),
+    'agent.server.latency.p99Ms': at(0.99),
+    'agent.server.latency.maxMs': sorted[sorted.length - 1] ?? 0,
+    'agent.server.over100msPerMin': perMin(latencies.filter((ms) => ms > 100).length),
+    'agent.server.over500msPerMin': perMin(latencies.filter((ms) => ms > 500).length),
+    'agent.reopen.medianMs': median(reopenMs),
+    'agent.reopen.maxMs': reopenMs.length ? Math.max(...reopenMs) : -1,
+    'agent.cut.medianMs': median(cutMs),
+    'agent.cut.maxMs': cutMs.length ? Math.max(...cutMs) : -1,
+    ...windowMetrics(probe, 'agent', start, end),
+    'agent.longTasks.msPerMin': perMin(longTaskStats(probe.longTasks, start, end).totalMs),
+    ...cdpDelta(before, after, 'agent'),
   }
 }
 
@@ -599,11 +824,14 @@ async function inMobileContext(
 
 async function runOnce(options: Options, index: number): Promise<Metrics> {
   const answers = { stream: buildAnswer(STREAM_TOKENS), long: buildAnswer(LONG_TOKENS) }
-  const mock = await startMockOpenAI(answers, TOKENS_PER_SECOND)
+  const mock = await startMockOpenAI(answers, TOKENS_PER_SECOND, {
+    seed: seedScript(seedFileCount(options.context)),
+    agent: agentScript(options.agentSteps, AGENT_THINK_TOKENS),
+  })
   let app: App | null = null
   let browser: Browser | null = null
   try {
-    app = await bootApp(mock, options.profile)
+    app = await bootApp(mock, options.profile, options.context)
     const booted = app
     const launched = await chromium.launch({ headless: true, args: ['--enable-precise-memory-info'] })
     browser = launched
@@ -623,7 +851,9 @@ async function runOnce(options: Options, index: number): Promise<Metrics> {
             ? scenarioHidden(context, current, mock)
             : scenario === 'reconnect'
               ? scenarioReconnect(context, current, mock)
-              : scenarioLongSession(context, current),
+              : scenario === 'agent'
+                ? scenarioAgent(context, current)
+                : scenarioLongSession(context, current),
       )
       Object.assign(metrics, result)
     }
@@ -681,6 +911,9 @@ async function main(): Promise<void> {
       scenarios: options.scenarios,
       runs: options.runs,
       profile: options.profile,
+      contextTokens: options.context,
+      agentSteps: options.agentSteps,
+      agentThinkTokens: AGENT_THINK_TOKENS,
     },
     median,
     runs,
