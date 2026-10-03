@@ -697,6 +697,136 @@ describe('buildContextMessages', () => {
       expect(result.filter((m) => m.role === 'user')).toHaveLength(1)
     })
 
+    describe('after a snapshot taken while the sub-agent runs', () => {
+      // A mid-turn snapshot (taken inside sub-agent loops) absorbs the
+      // sub-agent's earlier messages, and its context is built from the
+      // snapshot plus the events after it: the sub-agent scope ignored the
+      // snapshot, so the sub-agent lost its task and everything it had done.
+      const sub = { subAgentId: 'sub-1', subAgentType: 'explorer' }
+      const snapshotOf = (messages: Array<Record<string, unknown>>, contextWindows: unknown[] = []): StoredEvent =>
+        makeEvent({
+          seq: 10,
+          type: 'turn.snapshot',
+          data: {
+            mode: 'builder',
+            phase: 'build',
+            isRunning: true,
+            messages,
+            criteria: [],
+            metadataEntries: {},
+            contextState: {
+              currentTokens: 0,
+              maxTokens: 200000,
+              compactionCount: 0,
+              dangerZone: false,
+              canCompact: false,
+              dynamicContextChanged: false,
+            },
+            currentContextWindowId: 'window-1',
+            contextWindows,
+            todos: [],
+            readFiles: [],
+            snapshotSeq: 10,
+            snapshotAt: 1,
+          } as never,
+        })
+      const after = (seq: number, data: Record<string, unknown>, type: StoredEvent['type'] = 'message.start') =>
+        makeEvent({ seq, type, data: { contextWindowId: 'window-1', ...sub, ...data } as never })
+
+      it('keeps the messages the snapshot absorbed', () => {
+        const events = [
+          snapshotOf([
+            { id: 'parent', role: 'user', content: 'Delegate it', timestamp: 1, contextWindowId: 'window-1' },
+            {
+              id: 'task',
+              role: 'user',
+              content: 'Run ./gen.sh 1 to 8',
+              timestamp: 2,
+              contextWindowId: 'window-1',
+              ...sub,
+            },
+            {
+              id: 'a1',
+              role: 'assistant',
+              content: '',
+              timestamp: 3,
+              contextWindowId: 'window-1',
+              ...sub,
+              toolCalls: [
+                {
+                  id: 'call-1',
+                  name: 'run_command',
+                  arguments: { command: './gen.sh 1' },
+                  result: { success: true, output: 'SECRET-1', durationMs: 1, truncated: false },
+                },
+              ],
+            },
+          ]),
+          after(11, { messageId: 'a2', role: 'assistant', content: 'Next one.' }),
+          after(12, { messageId: 'a2' }, 'message.done'),
+        ]
+
+        const result = buildContextMessages(events, { type: 'subagent', sessionId: 'session-1', ...sub })
+
+        expect(result[0]).toMatchObject({ role: 'user', content: 'Run ./gen.sh 1 to 8' })
+        expect(result.some((m) => m.toolCalls?.some((c) => c.id === 'call-1'))).toBe(true)
+        expect(result.some((m) => m.role === 'tool' && m.content.includes('SECRET-1'))).toBe(true)
+        expect(result[result.length - 1]).toMatchObject({ role: 'assistant', content: 'Next one.' })
+        // Nothing from the parent agent.
+        expect(result.some((m) => m.content === 'Delegate it')).toBe(false)
+      })
+
+      it('keeps the compaction boundary the snapshot absorbed', () => {
+        const events = [
+          snapshotOf(
+            [
+              {
+                id: 'task',
+                role: 'user',
+                content: 'Run ./gen.sh 1 to 8',
+                timestamp: 1,
+                contextWindowId: 'window-1',
+                ...sub,
+              },
+              {
+                id: 'old',
+                role: 'assistant',
+                content: 'Before the compaction.',
+                timestamp: 2,
+                contextWindowId: 'window-1',
+                ...sub,
+              },
+              {
+                id: 'summary',
+                role: 'assistant',
+                content: 'Ran 1-3',
+                timestamp: 3,
+                contextWindowId: 'window-1',
+                isCompactionSummary: true,
+                ...sub,
+              },
+            ],
+            [
+              {
+                closedWindowId: 'window-1',
+                newWindowId: 'window-1',
+                beforeTokens: 1,
+                afterTokens: 0,
+                summary: '',
+                timestamp: 3,
+                ...sub,
+              },
+            ],
+          ),
+          after(11, { messageId: 'a2', role: 'assistant', content: 'Running 4.' }),
+        ]
+
+        const result = buildContextMessages(events, { type: 'subagent', sessionId: 'session-1', ...sub })
+
+        expect(result.map((m) => m.content)).toEqual(['Run ./gen.sh 1 to 8', 'Ran 1-3', 'Running 4.'])
+      })
+    })
+
     it('does not include top-level compaction as sub-agent compaction', () => {
       const events: StoredEvent[] = [
         makeEvent({

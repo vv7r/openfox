@@ -23,7 +23,7 @@ import {
 } from '../events/folding.js'
 import type { RequestContextMessage } from './request-context.js'
 import { minimalMessagesToRequestContextMessages } from './request-context.js'
-import { buildContextMessagesFromEventHistory, foldContextState } from '../events/folding.js'
+import { buildContextMessagesFromEventHistory, expandLatestSnapshot, foldContextState } from '../events/folding.js'
 import { getEventStore, combineEventsWithSnapshot } from '../events/index.js'
 import { processContextImages, loadResolvedVisionModel } from '../context/image-processor.js'
 import { modelSupportsVision } from '../llm/profiles.js'
@@ -89,19 +89,30 @@ function buildTopLevelContextMessages(events: StoredEvent[], scope: TopLevelScop
 // Sub-Agent Scope
 // ============================================================================
 
-function buildSubAgentContextMessages(events: StoredEvent[], scope: SubAgentScope): ContextMessage[] {
+function buildSubAgentContextMessages(storedEvents: StoredEvent[], scope: SubAgentScope): ContextMessage[] {
   const { subAgentId } = scope
+  // A snapshot taken while the sub-agent runs (mid-turn cadence) absorbs its
+  // earlier messages: replay them, or the sub-agent loses its task and work.
+  const events = expandLatestSnapshot(storedEvents)
   const messages: InternalMessage[] = []
   const messageMap = new Map<string, InternalMessage>()
   const fulfilledToolCallIds = new Set<string>()
 
-  // Find the most recent sub-agent compaction boundary
+  // Find the most recent sub-agent compaction boundary: its context.compacted
+  // event or, once a snapshot absorbed that event, its summary message.
   let compactionSummaryIndex = -1
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]!
     if (event.type === 'context.compacted') {
       const data = event.data as Extract<TurnEvent, { type: 'context.compacted' }>['data']
       if (data.subAgentId === subAgentId) {
+        compactionSummaryIndex = i
+        break
+      }
+    }
+    if (event.type === 'message.start') {
+      const data = event.data as Extract<TurnEvent, { type: 'message.start' }>['data']
+      if (data.isCompactionSummary && data.subAgentId === subAgentId) {
         compactionSummaryIndex = i
         break
       }

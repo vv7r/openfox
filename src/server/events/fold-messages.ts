@@ -90,6 +90,8 @@ export function snapshotMessagesToEvents(messages: SnapshotMessage[], sessionId 
         // Needed to recognize an interrupted compaction prompt (see below).
         ...(message.isSystemGenerated !== undefined && { isSystemGenerated: message.isSystemGenerated }),
         ...(message.metadata !== undefined && { metadata: message.metadata }),
+        // A sub-agent's compaction boundary (see buildSubAgentContextMessages).
+        ...(message.isCompactionSummary !== undefined && { isCompactionSummary: message.isCompactionSummary }),
       },
     })
 
@@ -499,10 +501,18 @@ export function buildContextMessagesFromEventHistory(
   windowId?: string,
   options?: ContextMessageBuildOptions,
 ): ContextMessage[] {
+  return buildContextMessagesFromStoredEvents(expandLatestSnapshot(events), windowId, options)
+}
+
+/**
+ * Replace the latest snapshot with the message events it absorbed, followed by
+ * the events after it: the stream every context fold (top-level or sub-agent)
+ * works on. Events before the snapshot (including the stats-only events
+ * combineEventsWithSnapshot reconstructs) are covered by it and dropped.
+ */
+export function expandLatestSnapshot(events: StoredEvent[]): StoredEvent[] {
   const snapshotEvent = [...events].reverse().find((event) => event.type === 'turn.snapshot')
-  if (!snapshotEvent) {
-    return buildContextMessagesFromStoredEvents(events, windowId, options)
-  }
+  if (!snapshotEvent) return events
   const snapshot = snapshotEvent.data as SessionSnapshot
 
   // The snapshot is a point-in-time capture of complete messages. Later events
@@ -539,11 +549,7 @@ export function buildContextMessagesFromEventHistory(
     return toolCallId !== undefined && unresolvedToolCallIds.has(toolCallId)
   })
 
-  return buildContextMessagesFromStoredEvents(
-    [...snapshotMessagesToEvents(snapshot.messages, snapshotEvent.sessionId), ...laterEvents],
-    windowId,
-    options,
-  )
+  return [...snapshotMessagesToEvents(snapshot.messages, snapshotEvent.sessionId), ...laterEvents]
 }
 
 export function foldTurnEventsToSnapshotMessages(events: EventLike[]): SnapshotMessage[] {
