@@ -30,6 +30,8 @@ export {
   reorderToolMessages,
   buildContextMessagesFromEventHistory,
   expandLatestSnapshot,
+  collectCarriedMessageIds,
+  placeCarriedRounds,
   buildSessionStatsMessages,
   foldTurnEventsToSnapshotMessages,
   foldTurnEventsToSnapshotMessagesFromInitial,
