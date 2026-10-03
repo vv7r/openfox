@@ -1498,6 +1498,19 @@ describe('EventStore - Event Cleanup', () => {
       expect(tail.bytes).toBeGreaterThan(content.length)
       expect(tail.bytes).toBeGreaterThanOrEqual(Buffer.byteLength(content, 'utf8'))
     })
+
+    it('counts a message started twice as one open message', () => {
+      // A successful compaction starts its summary attempt's message again,
+      // with the summary as content, then closes it once.
+      store.append('session-1', { type: 'message.start', data: { messageId: 'a1', role: 'assistant', content: '' } })
+      store.append('session-1', {
+        type: 'message.start',
+        data: { messageId: 'a1', role: 'assistant', content: 'summary', isCompactionSummary: true },
+      })
+      store.append('session-1', { type: 'message.done', data: { messageId: 'a1' } })
+
+      expect(store.getEventLogTail('session-1', 0).openMessages).toBe(0)
+    })
   })
 
   describe('getContextWindowEvents', () => {

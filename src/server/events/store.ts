@@ -711,13 +711,21 @@ export class EventStore {
                 -- bytes, so a non-ASCII payload (accents, CJK, emoji) would
                 -- understate the tail by up to 3x and overshoot the byte budget.
                 COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) AS bytes,
-                COALESCE(SUM(CASE WHEN event_type = 'message.start' THEN 1 ELSE 0 END), 0)
-                  - COALESCE(SUM(CASE WHEN event_type = 'message.done' THEN 1 ELSE 0 END), 0) AS openMessages,
-                COALESCE(SUM(CASE WHEN event_type = 'tool.call' THEN 1 ELSE 0 END), 0)
-                  - COALESCE(SUM(CASE WHEN event_type = 'tool.result' THEN 1 ELSE 0 END), 0) AS pendingToolCalls
-         FROM events WHERE session_id = ? AND seq > ?`,
+                -- Distinct ids: a successful compaction starts its summary
+                -- attempt's message a second time, then closes it once. The
+                -- counts are subqueries so they only read their own event
+                -- types (session/type/seq index), not every tail row.
+                (SELECT COUNT(DISTINCT json_extract(payload, '$.messageId')) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'message.start' AND seq > @fromSeq)
+                  - (SELECT COUNT(DISTINCT json_extract(payload, '$.messageId')) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'message.done' AND seq > @fromSeq) AS openMessages,
+                (SELECT COUNT(*) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'tool.call' AND seq > @fromSeq)
+                  - (SELECT COUNT(*) FROM events
+                  WHERE session_id = @sessionId AND event_type = 'tool.result' AND seq > @fromSeq) AS pendingToolCalls
+         FROM events WHERE session_id = @sessionId AND seq > @fromSeq`,
       )
-      .get(sessionId, fromSeq) as {
+      .get({ sessionId, fromSeq }) as {
       events: number
       bytes: number
       openMessages: number
