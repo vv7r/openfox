@@ -65,6 +65,7 @@ test-results/
 e2e-test-project/
 tmp/
 worktrees/
+.agent-office/
 
 /plugins/
 # Mobile perf bench results (npm run perf)

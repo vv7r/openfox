@@ -601,6 +601,7 @@ export async function runTopLevelAgentLoop(
       })
 
       if (!attemptResult.error) {
+        ensureAssistantMessage()
         result = attemptResult
         // A density above the estimate means fewer tokens than characters / 4
         // were reported (e.g. only the uncached part): not a measure, ignored.
