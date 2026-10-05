@@ -18,7 +18,12 @@ import type { AgentDefinition } from '../agents/types.js'
 import { getEventStore, getCurrentContextWindowId, getCurrentWindowMessageOptions } from '../events/index.js'
 import type { SessionManager } from '../session/index.js'
 import { getToolRegistryForAgent, PathAccessDeniedError } from '../tools/index.js'
-import { buildAgentReminder, buildAgentSmallReminder, buildTopLevelSystemPrompt } from './prompts.js'
+import {
+  buildAgentReminder,
+  buildAgentSmallReminder,
+  buildTopLevelSystemPrompt,
+  type ToolProvenance,
+} from './prompts.js'
 import { createSnapshotCadence } from './snapshot-cadence.js'
 import { serverT } from '../i18n.js'
 import {
@@ -319,7 +324,11 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
  * Always appends — never skips. Ground truth from events only, no
  * in-memory state tracking.
  */
-function injectAgentReminder(sessionId: string, agentDef: AgentDefinition, allToolNames?: string[]): void {
+function injectAgentReminder(
+  sessionId: string,
+  agentDef: AgentDefinition,
+  allTools?: (string | ToolProvenance)[],
+): void {
   const eventStore = getEventStore()
   const currentWindowId = getCurrentContextWindowId(sessionId)
 
@@ -350,9 +359,7 @@ function injectAgentReminder(sessionId: string, agentDef: AgentDefinition, allTo
   const currentAgentName = agentDef.metadata.name ?? agentDef.metadata.id
 
   const isSmallReminder = latestAgentName === currentAgentName
-  const content = isSmallReminder
-    ? buildAgentSmallReminder(currentAgentName)
-    : buildAgentReminder(agentDef, allToolNames)
+  const content = isSmallReminder ? buildAgentSmallReminder(currentAgentName) : buildAgentReminder(agentDef, allTools)
 
   const reminderMsgId = crypto.randomUUID()
   const currentWindowMessageOptions = currentWindowId ? { contextWindowId: currentWindowId } : undefined
@@ -406,10 +413,24 @@ export async function runAgentTurn(
   const agentLlmClient = resolveAgentClient()
   const statsIdentity = resolveStatsIdentity({ ...options, llmClient: agentLlmClient })
 
-  const agentToolNames = getToolRegistryForAgent(agentDef, options.sessionId).definitions.map((d) => d.function.name)
+  const agentRegistry = getToolRegistryForAgent(agentDef, options.sessionId)
+  const agentToolProvenance: ToolProvenance[] = (agentRegistry.tools ?? []).flatMap((t) => {
+    const name = t.name ?? (t as { function?: { name?: string } }).function?.name
+    if (!name) return []
+    return [
+      {
+        name,
+        ...(t.mcpServer
+          ? { kind: 'mcp' as const, label: t.mcpServer }
+          : t.pluginName
+            ? { kind: 'plugin' as const, label: t.pluginName }
+            : {}),
+      },
+    ]
+  })
 
   if (!options.warmup && !options.skipAgentReminder) {
-    injectAgentReminder(options.sessionId, agentDef, agentToolNames)
+    injectAgentReminder(options.sessionId, agentDef, agentToolProvenance)
   }
 
   const session = options.sessionManager.requireSession(options.sessionId)
@@ -506,7 +527,7 @@ export async function runAgentTurn(
       },
       getToolRegistry: () => getToolRegistryForAgent(agentDef, options.sessionId),
       getConversationMessages: buildGetConversationMessages(options.sessionId, resolveAgentClient, append),
-      injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef, agentToolNames),
+      injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef, agentToolProvenance),
       rebuildCachedContext: async () => {
         const { applyDynamicContext } = await import('./dynamic-context.js')
         await applyDynamicContext(options.sessionManager, options.sessionId, agentLlmClient.getModel())

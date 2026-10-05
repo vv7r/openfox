@@ -5,6 +5,7 @@ import {
   buildSubAgentSystemPrompt,
   buildAgentReminder,
   buildSubAgentsSection,
+  type ToolProvenance,
 } from './prompts.js'
 import type { AgentDefinition } from '../agents/types.js'
 
@@ -268,6 +269,118 @@ describe('buildAgentReminder: plugin/MCP tools', () => {
     const reminder = buildAgentReminder(agent, ['read_file', 'camofox_open', 'camofox_click'])
     const matches = reminder.match(/camofox_open/g)
     expect(matches).toHaveLength(1)
+  })
+})
+
+describe('buildAgentReminder: tools grouped by provenance', () => {
+  const agent: AgentDefinition = {
+    metadata: {
+      id: 'builder',
+      name: 'Builder',
+      description: 'Builds work',
+      subagent: false,
+      allowedTools: ['read_file', 'write_file'],
+    },
+    prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
+  }
+
+  it('groups plugin tools under their display name (sorted within group)', () => {
+    const reminder = buildAgentReminder(agent, [
+      { name: 'read_file' },
+      { name: 'write_file' },
+      { name: 'camofox_screenshot', kind: 'plugin', label: 'Camofox Browser' },
+      { name: 'camofox_open', kind: 'plugin', label: 'Camofox Browser' },
+      { name: 'rtk_rewrite', kind: 'plugin', label: 'rtk' },
+    ])
+    expect(reminder).toContain('Plugin tools:')
+    // Tools of the same plugin are grouped and sorted: camofox_open before camofox_screenshot.
+    expect(reminder).toMatch(/- Camofox Browser: camofox_open, camofox_screenshot/)
+    expect(reminder).toMatch(/- rtk: rtk_rewrite/)
+  })
+
+  it('groups MCP tools under their server name (groups sorted by label)', () => {
+    const reminder = buildAgentReminder(agent, [
+      { name: 'read_file' },
+      { name: 'zeta_tool', kind: 'mcp', label: 'zeta-server' },
+      { name: 'alpha_tool', kind: 'mcp', label: 'alpha-server' },
+    ])
+    expect(reminder).toContain('MCP tools:')
+    // Groups are deterministic: sorted by label → alpha-server before zeta-server.
+    const alphaIdx = reminder.indexOf('- alpha-server: alpha_tool')
+    const zetaIdx = reminder.indexOf('- zeta-server: zeta_tool')
+    expect(alphaIdx).toBeGreaterThan(-1)
+    expect(zetaIdx).toBeGreaterThan(-1)
+    expect(alphaIdx).toBeLessThan(zetaIdx)
+  })
+
+  it('keeps the native tools line and does not duplicate grouped tools in it', () => {
+    const reminder = buildAgentReminder(agent, [
+      { name: 'read_file' },
+      { name: 'write_file' },
+      { name: 'camofox_open', kind: 'plugin', label: 'Camofox Browser' },
+    ])
+    const baseLine = reminder.match(/You have access to these tools: (.*)/)?.[1] ?? ''
+    expect(baseLine).toContain('read_file')
+    expect(baseLine).toContain('write_file')
+    expect(baseLine).not.toContain('camofox_open')
+    // camofox_open appears exactly once — in the Plugin tools group, not the base line.
+    const matches = reminder.match(/camofox_open/g)
+    expect(matches).toHaveLength(1)
+  })
+
+  it('is deterministic: identical input yields byte-identical output', () => {
+    const tools: ToolProvenance[] = [
+      { name: 'read_file' },
+      { name: 'write_file' },
+      { name: 'camofox_screenshot', kind: 'plugin', label: 'Camofox Browser' },
+      { name: 'camofox_open', kind: 'plugin', label: 'Camofox Browser' },
+      { name: 'rtk_rewrite', kind: 'plugin', label: 'rtk' },
+      { name: 'zeta_tool', kind: 'mcp', label: 'zeta-server' },
+    ]
+    expect(buildAgentReminder(agent, tools)).toBe(buildAgentReminder(agent, tools))
+  })
+
+  it('excludes all plugin/MCP tools (base line and groups) when __mcp_none__', () => {
+    const agentMcpNone: AgentDefinition = {
+      metadata: {
+        id: 'builder',
+        name: 'Builder',
+        description: 'Builds work',
+        subagent: false,
+        allowedTools: ['read_file', '__mcp_none__'],
+      },
+      prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
+    }
+    const reminder = buildAgentReminder(agentMcpNone, [
+      { name: 'read_file' },
+      { name: 'camofox_open', kind: 'plugin', label: 'Camofox Browser' },
+      { name: 'mcp_tool', kind: 'mcp', label: 'srv' },
+    ])
+    expect(reminder).not.toContain('camofox_open')
+    expect(reminder).not.toContain('mcp_tool')
+    expect(reminder).not.toContain('Plugin tools:')
+    expect(reminder).not.toContain('MCP tools:')
+  })
+
+  it('shows no provenance groups for sub-agents', () => {
+    const subAgent: AgentDefinition = {
+      metadata: {
+        id: 'verifier',
+        name: 'Verifier',
+        description: 'Verifies completed criteria',
+        subagent: true,
+        allowedTools: ['read_file', 'return_value'],
+      },
+      prompt: 'Verify each criterion carefully.',
+    }
+    const reminder = buildAgentReminder(subAgent, [
+      { name: 'read_file' },
+      { name: 'return_value' },
+      { name: 'camofox_open', kind: 'plugin', label: 'Camofox Browser' },
+    ])
+    expect(reminder).not.toContain('Plugin tools:')
+    expect(reminder).not.toContain('MCP tools:')
+    expect(reminder).not.toContain('camofox_open')
   })
 })
 

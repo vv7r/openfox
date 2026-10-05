@@ -32,7 +32,8 @@ export interface Tool {
   definition: LLMToolDefinition
   execute: (args: Record<string, unknown>, context: ToolContext) => Promise<ToolResult>
   permittedActions?: string[] // Actions this tool supports for granular permissions
-  mcpServer?: string
+  mcpServer?: string // Name of the MCP server that owns this tool
+  pluginName?: string // Display name of the plugin that owns this tool
 }
 
 export interface ToolRegistry {

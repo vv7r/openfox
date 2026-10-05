@@ -249,14 +249,42 @@ export function buildSubAgentSystemPrompt(
 }
 
 /**
+ * Provenance of a tool: where it comes from (a plugin or an MCP server).
+ * `kind` distinguishes plugin vs MCP tools; `label` is the display name of
+ * the owning plugin or the name of the owning MCP server.
+ */
+export interface ToolProvenance {
+  name: string
+  kind?: 'mcp' | 'plugin'
+  label?: string
+}
+
+function normalizeToolProvenance(allTools?: (string | ToolProvenance)[]): ToolProvenance[] {
+  return (allTools ?? []).map((t) => (typeof t === 'string' ? { name: t } : t))
+}
+
+/**
+ * Render a provenance group as bullet lines, deterministic: groups sorted by
+ * label, tool names sorted within each group. Stable output keeps the
+ * reminder byte-identical turn to turn (LLM server cache requirement).
+ */
+function groupToolsByLabel(groups: Map<string, string[]>): string[] {
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([label, names]) => `- ${label}: ${[...new Set(names)].sort().join(', ')}`)
+}
+
+/**
  * Build the tool permissions section for the system reminder.
  * Filters allowedTools to show only tools actually available to the agent.
  * Displays granular permissions (e.g., "criterion: pass, fail").
+ * Plugin/MCP tools allowed at runtime are grouped by their provenance
+ * (plugin display name / MCP server name) on separate lines.
  */
 function buildToolPermissionsSection(
   allowedTools: string[] | undefined,
   isSubAgent: boolean,
-  allToolNames?: string[],
+  allTools?: (string | ToolProvenance)[],
 ): string {
   if (!allowedTools || allowedTools.length === 0) {
     return '\n\n## AVAILABLE TOOLS\n\nYou have no tools available.'
@@ -306,31 +334,53 @@ function buildToolPermissionsSection(
     }
   }
 
-  // Append MCP/plugin tools that are allowed at runtime but not listed in
-  // allowedTools (mirrors the execution-time policy in tools/index.ts:
-  // unrestricted top-level agents may call every MCP/plugin tool).
-  if (allToolNames && !isSubAgent) {
+  // Plugin/MCP tools allowed at runtime but not listed in allowedTools
+  // (mirrors the execution-time policy in tools/index.ts: unrestricted
+  // top-level agents may call every MCP/plugin tool). Grouped by provenance.
+  let pluginLines: string[] = []
+  let mcpLines: string[] = []
+  if (allTools && !isSubAgent) {
     const hasMcpNone = (allowedTools ?? []).includes('__mcp_none__')
     const builtIn = getBuiltInToolNames()
-    const extra = allToolNames.filter((name) => !builtIn.has(name) && !parts.includes(name) && !name.startsWith('__'))
+    const provenance = normalizeToolProvenance(allTools)
+    const extra = provenance.filter((t) => !builtIn.has(t.name) && !parts.includes(t.name) && !t.name.startsWith('__'))
     if (!hasMcpNone && extra.length > 0) {
-      parts.push(...extra)
+      // Tools with no provenance stay on the flat native line (backwards compatible).
+      for (const t of extra) {
+        if (t.kind !== 'plugin' && t.kind !== 'mcp') parts.push(t.name)
+      }
+      const pluginGroups = new Map<string, string[]>()
+      const mcpGroups = new Map<string, string[]>()
+      for (const t of extra) {
+        if (t.kind === 'plugin' || t.kind === 'mcp') {
+          const label = t.label ?? 'Unknown'
+          const groups = t.kind === 'plugin' ? pluginGroups : mcpGroups
+          const arr = groups.get(label) ?? []
+          arr.push(t.name)
+          groups.set(label, arr)
+        }
+      }
+      pluginLines = groupToolsByLabel(pluginGroups)
+      mcpLines = groupToolsByLabel(mcpGroups)
     }
   }
 
   const toolsList = parts.join(', ')
-  return `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${toolsList}`
+  let result = `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${toolsList}`
+  if (pluginLines.length > 0) result += `\n\nPlugin tools:\n${pluginLines.join('\n')}`
+  if (mcpLines.length > 0) result += `\n\nMCP tools:\n${mcpLines.join('\n')}`
+  return result
 }
 
 /**
  * Build a runtime reminder from an agent definition's prompt body.
  * Used for top-level agents to inject mode-specific behavior via user messages.
  */
-export function buildAgentReminder(agentDef: AgentDefinition, allToolNames?: string[]): string {
+export function buildAgentReminder(agentDef: AgentDefinition, allTools?: (string | ToolProvenance)[]): string {
   const toolPermissions = buildToolPermissionsSection(
     agentDef.metadata.allowedTools,
     agentDef.metadata.subagent,
-    allToolNames,
+    allTools,
   )
   return `<system-reminder>\n${agentDef.prompt}${toolPermissions}\n</system-reminder>`
 }

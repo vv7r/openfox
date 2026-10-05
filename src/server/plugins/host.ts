@@ -380,7 +380,12 @@ export class PluginHost {
   }
 
   private applyContributions(): void {
-    setPluginTools(this.registry.getTools().map((tool) => toServerTool(tool)))
+    setPluginTools(
+      this.registry.getOwnedTools().map((entry) => {
+        const pluginName = this.records.get(entry.pluginId)?.diagnostic.displayName ?? entry.pluginId
+        return toServerTool(entry.tool, pluginName)
+      }),
+    )
     setPluginCommands(
       this.registry.getOwnedCommands().map((entry) => toCommandDefinition(entry.command, entry.pluginId)),
     )
@@ -535,13 +540,14 @@ function readStorageValue(pluginId: string, key: string): PluginSettingValue | u
   }
 }
 
-function toServerTool(tool: PluginTool): Tool {
+function toServerTool(tool: PluginTool, pluginName?: string): Tool {
   return {
     name: tool.name,
     definition: {
       type: 'function',
       function: { name: tool.name, description: tool.description, parameters: tool.parameters },
     },
+    ...(pluginName ? { pluginName } : {}),
     execute: async (args, context: ToolContext) => {
       const started = Date.now()
       try {
