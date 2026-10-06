@@ -319,7 +319,7 @@ export async function runChatTurn(options: OrchestratorOptions): Promise<void> {
  * Always appends — never skips. Ground truth from events only, no
  * in-memory state tracking.
  */
-function injectAgentReminder(sessionId: string, agentDef: AgentDefinition): void {
+function injectAgentReminder(sessionId: string, agentDef: AgentDefinition, allToolNames?: string[]): void {
   const eventStore = getEventStore()
   const currentWindowId = getCurrentContextWindowId(sessionId)
 
@@ -350,7 +350,9 @@ function injectAgentReminder(sessionId: string, agentDef: AgentDefinition): void
   const currentAgentName = agentDef.metadata.name ?? agentDef.metadata.id
 
   const isSmallReminder = latestAgentName === currentAgentName
-  const content = isSmallReminder ? buildAgentSmallReminder(currentAgentName) : buildAgentReminder(agentDef)
+  const content = isSmallReminder
+    ? buildAgentSmallReminder(currentAgentName)
+    : buildAgentReminder(agentDef, allToolNames)
 
   const reminderMsgId = crypto.randomUUID()
   const currentWindowMessageOptions = currentWindowId ? { contextWindowId: currentWindowId } : undefined
@@ -404,8 +406,10 @@ export async function runAgentTurn(
   const agentLlmClient = resolveAgentClient()
   const statsIdentity = resolveStatsIdentity({ ...options, llmClient: agentLlmClient })
 
+  const agentToolNames = getToolRegistryForAgent(agentDef, options.sessionId).definitions.map((d) => d.function.name)
+
   if (!options.warmup && !options.skipAgentReminder) {
-    injectAgentReminder(options.sessionId, agentDef)
+    injectAgentReminder(options.sessionId, agentDef, agentToolNames)
   }
 
   const session = options.sessionManager.requireSession(options.sessionId)
@@ -502,7 +506,7 @@ export async function runAgentTurn(
       },
       getToolRegistry: () => getToolRegistryForAgent(agentDef, options.sessionId),
       getConversationMessages: buildGetConversationMessages(options.sessionId, resolveAgentClient, append),
-      injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef),
+      injectAgentReminder: () => injectAgentReminder(options.sessionId, agentDef, agentToolNames),
       rebuildCachedContext: async () => {
         const { applyDynamicContext } = await import('./dynamic-context.js')
         await applyDynamicContext(options.sessionManager, options.sessionId, agentLlmClient.getModel())

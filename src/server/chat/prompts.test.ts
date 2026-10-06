@@ -202,6 +202,75 @@ describe('buildAgentReminder', () => {
   })
 })
 
+describe('buildAgentReminder: plugin/MCP tools', () => {
+  it('includes plugin/MCP tools in AVAILABLE TOOLS for top-level agent when allToolNames provided', () => {
+    const agent: AgentDefinition = {
+      metadata: {
+        id: 'builder',
+        name: 'Builder',
+        description: 'Builds work',
+        subagent: false,
+        allowedTools: ['read_file', 'write_file'],
+      },
+      prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
+    }
+    const reminder = buildAgentReminder(agent, ['read_file', 'write_file', 'camofox_open', 'camofox_click'])
+    expect(reminder).toContain('AVAILABLE TOOLS')
+    expect(reminder).toContain('camofox_open')
+    expect(reminder).toContain('camofox_click')
+  })
+
+  it('excludes plugin/MCP tools when __mcp_none__ is in allowedTools', () => {
+    const agent: AgentDefinition = {
+      metadata: {
+        id: 'builder',
+        name: 'Builder',
+        description: 'Builds work',
+        subagent: false,
+        allowedTools: ['read_file', 'write_file', '__mcp_none__'],
+      },
+      prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
+    }
+    const reminder = buildAgentReminder(agent, ['read_file', 'write_file', 'camofox_open', 'camofox_click'])
+    expect(reminder).toContain('AVAILABLE TOOLS')
+    expect(reminder).not.toContain('camofox_open')
+    expect(reminder).not.toContain('camofox_click')
+  })
+
+  it('excludes plugin/MCP tools for sub-agents even when allToolNames provided', () => {
+    const subAgent: AgentDefinition = {
+      metadata: {
+        id: 'verifier',
+        name: 'Verifier',
+        description: 'Verifies completed criteria',
+        subagent: true,
+        allowedTools: ['read_file', 'return_value'],
+      },
+      prompt: 'Verify each criterion carefully.',
+    }
+    const reminder = buildAgentReminder(subAgent, ['read_file', 'return_value', 'camofox_open', 'camofox_click'])
+    expect(reminder).toContain('AVAILABLE TOOLS')
+    expect(reminder).not.toContain('camofox_open')
+    expect(reminder).not.toContain('camofox_click')
+  })
+
+  it('does not duplicate tools already in allowedTools', () => {
+    const agent: AgentDefinition = {
+      metadata: {
+        id: 'builder',
+        name: 'Builder',
+        description: 'Builds work',
+        subagent: false,
+        allowedTools: ['read_file', 'camofox_open'],
+      },
+      prompt: '# Build Mode\nCRITICAL: Build mode ACTIVE - implementation allowed.',
+    }
+    const reminder = buildAgentReminder(agent, ['read_file', 'camofox_open', 'camofox_click'])
+    const matches = reminder.match(/camofox_open/g)
+    expect(matches).toHaveLength(1)
+  })
+})
+
 describe('buildSubAgentsSection', () => {
   it('generates listing from agent definitions', () => {
     const section = buildSubAgentsSection([mockVerifier, mockCodeReviewer])

@@ -662,6 +662,7 @@ describe('chat orchestrator', () => {
   it('converts path access denial into correction events and handles unknown errors', async () => {
     const pathErrorStore = createEventStore()
     getEventStoreMock.mockReturnValue(pathErrorStore)
+    getToolRegistryForModeMock.mockReturnValue({ tools: [], definitions: [], execute: vi.fn() })
     getAllInstructionsMock.mockRejectedValueOnce(new PathAccessDeniedError(['/etc/passwd'], 'read_file', 'both'))
 
     const sessionManager = createSessionManager({

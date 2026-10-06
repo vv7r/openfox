@@ -2,6 +2,7 @@ import { basename } from 'node:path'
 import type { SkillMetadata } from '../skills/types.js'
 import type { AgentDefinition } from '../agents/types.js'
 import { computeEffectiveTools } from '../tools/tool-policy.js'
+import { getBuiltInToolNames } from '../tools/index.js'
 import { getPlatformShell } from '../utils/platform.js'
 import { getSetting, SETTINGS_KEYS } from '../db/settings.js'
 
@@ -252,7 +253,11 @@ export function buildSubAgentSystemPrompt(
  * Filters allowedTools to show only tools actually available to the agent.
  * Displays granular permissions (e.g., "criterion: pass, fail").
  */
-function buildToolPermissionsSection(allowedTools: string[] | undefined, isSubAgent: boolean): string {
+function buildToolPermissionsSection(
+  allowedTools: string[] | undefined,
+  isSubAgent: boolean,
+  allToolNames?: string[],
+): string {
   if (!allowedTools || allowedTools.length === 0) {
     return '\n\n## AVAILABLE TOOLS\n\nYou have no tools available.'
   }
@@ -301,6 +306,18 @@ function buildToolPermissionsSection(allowedTools: string[] | undefined, isSubAg
     }
   }
 
+  // Append MCP/plugin tools that are allowed at runtime but not listed in
+  // allowedTools (mirrors the execution-time policy in tools/index.ts:
+  // unrestricted top-level agents may call every MCP/plugin tool).
+  if (allToolNames && !isSubAgent) {
+    const hasMcpNone = (allowedTools ?? []).includes('__mcp_none__')
+    const builtIn = getBuiltInToolNames()
+    const extra = allToolNames.filter((name) => !builtIn.has(name) && !parts.includes(name) && !name.startsWith('__'))
+    if (!hasMcpNone && extra.length > 0) {
+      parts.push(...extra)
+    }
+  }
+
   const toolsList = parts.join(', ')
   return `\n\n## AVAILABLE TOOLS\n\nYou have access to these tools: ${toolsList}`
 }
@@ -309,8 +326,12 @@ function buildToolPermissionsSection(allowedTools: string[] | undefined, isSubAg
  * Build a runtime reminder from an agent definition's prompt body.
  * Used for top-level agents to inject mode-specific behavior via user messages.
  */
-export function buildAgentReminder(agentDef: AgentDefinition): string {
-  const toolPermissions = buildToolPermissionsSection(agentDef.metadata.allowedTools, agentDef.metadata.subagent)
+export function buildAgentReminder(agentDef: AgentDefinition, allToolNames?: string[]): string {
+  const toolPermissions = buildToolPermissionsSection(
+    agentDef.metadata.allowedTools,
+    agentDef.metadata.subagent,
+    allToolNames,
+  )
   return `<system-reminder>\n${agentDef.prompt}${toolPermissions}\n</system-reminder>`
 }
 
