@@ -1,0 +1,259 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(0 0 0 / 0.55);
+}
+
+.dialog {
+  position: fixed;
+  top: 6vh;
+  left: 50%;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 16px));
+  max-height: 88vh;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 8px;
+  background: rgb(var(--color-bg-secondary));
+  color: rgb(var(--color-text-primary));
+  transform: translateX(-50%);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgb(var(--color-border));
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.close {
+  display: flex;
+  padding: 3px;
+  border: 0;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--color-text-muted));
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.column {
+  flex-direction: column;
+  align-items: stretch !important;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: rgb(var(--color-text-muted));
+  font-size: 12.5px;
+}
+
+.error {
+  margin: 0;
+  color: rgb(var(--color-accent-error));
+  font-size: 13px;
+}
+
+.input,
+.select,
+.textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  background: rgb(var(--color-primary));
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.select {
+  flex: 0 1 auto;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 180px;
+  font: 12.5px/1.5 var(--font-mono);
+  resize: vertical;
+}
+
+.body button:not(.link) {
+  padding: 4px 10px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  background: rgb(var(--color-bg-tertiary));
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.body button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.body button.primary {
+  border-color: transparent;
+  background: rgb(var(--color-accent-primary));
+  color: rgb(var(--color-on-accent));
+  font-weight: 600;
+}
+
+.link {
+  align-self: flex-end;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgb(var(--color-accent-primary));
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgb(var(--color-border) / 0.6);
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(var(--color-text-muted));
+}
+
+.dot[data-state='connected'] {
+  background: rgb(var(--color-accent-success));
+}
+
+.dot[data-state='error'] {
+  background: rgb(var(--color-accent-error));
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.log {
+  max-height: 240px;
+  margin: 4px 0 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 4px;
+  background: rgb(var(--color-primary));
+  font: 12px/1.45 var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 6px;
+  background: rgb(var(--color-primary));
+}
+
+.card p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgb(var(--color-border));
+}
+
+.body .tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: rgb(var(--color-text-muted));
+}
+
+.body .tabs button[aria-selected='true'] {
+  border-bottom-color: rgb(var(--color-accent-primary));
+  color: rgb(var(--color-accent-primary));
+}
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}

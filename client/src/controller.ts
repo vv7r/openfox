@@ -20,6 +20,7 @@ import {
   type AgentInfo,
   type LayoutMode,
   type NamedItem,
+  type PanelId,
   type ProviderInfo,
   type QueuedMessage,
 } from './store/app'
@@ -38,6 +39,13 @@ import {
 import { Socket } from './transport/ws'
 
 const LAYOUT_SETTING = 'display.layoutMode'
+const FEED_DISPLAY_KEYS = [
+  'display.showThinking',
+  'display.showVerboseToolOutput',
+  'display.showStats',
+  'display.showAgentDefinitions',
+  'display.showWorkflowBars',
+]
 const RESUME_TIMEOUT_MS = 10_000
 
 interface SessionResponse {
@@ -169,11 +177,15 @@ function syncRoute(route: Route = currentRoute()): void {
 }
 
 async function loadSettings(): Promise<void> {
-  const keys = ['display.theme', LAYOUT_SETTING, 'display.locale'].join(',')
+  const keys = ['display.theme', LAYOUT_SETTING, 'display.locale', ...FEED_DISPLAY_KEYS].join(',')
   const settings = await getJson<Record<string, string>>(`/api/settings?keys=${keys}`)
   applyTheme(settings['display.theme'])
   const locale = applyLocale(settings['display.locale'])
-  useApp.setState({ locale, layout: parseLayout(settings[LAYOUT_SETTING]) })
+  useApp.setState({
+    locale,
+    layout: parseLayout(settings[LAYOUT_SETTING]),
+    display: Object.fromEntries(FEED_DISPLAY_KEYS.map((key) => [key, settings[key] ?? ''])),
+  })
 }
 
 async function start(): Promise<void> {
@@ -181,6 +193,9 @@ async function start(): Promise<void> {
   subscribeRoute(syncRoute)
   syncRoute()
   socket.connect()
+  void getJson<{ unreadCount: number }>('/api/notifications').then(({ unreadCount }) =>
+    useApp.setState({ unreadNotifications: unreadCount }),
+  )
   const [{ projects }, config, { providers }] = await Promise.all([
     getJson<{ projects: Project[] }>('/api/projects'),
     getJson<{ version: string | null; model: string | null }>('/api/config'),
@@ -195,6 +210,7 @@ export async function boot(): Promise<void> {
   const collapsed = readCollapsed()
   useApp.setState({ locale: applyCachedLocale(), leftCollapsed: collapsed.left, rightCollapsed: collapsed.right })
   const auth = await getJson<{ requiresAuth: boolean }>('/api/auth')
+  useApp.setState({ requiresAuth: auth.requiresAuth })
   if (auth.requiresAuth && !readToken()) {
     useApp.setState({ auth: 'required' })
     return
@@ -287,4 +303,25 @@ export const reloadSessions = (): Promise<void> => (openProjectId ? loadSessions
 export async function reloadProjects(): Promise<void> {
   const { projects } = await getJson<{ projects: Project[] }>('/api/projects')
   useApp.setState({ projects })
+}
+
+export async function saveSetting(key: string, value: string): Promise<void> {
+  await sendJson(`/api/settings/${key}`, 'PUT', { value })
+  if (FEED_DISPLAY_KEYS.includes(key)) useApp.setState((state) => ({ display: { ...state.display, [key]: value } }))
+}
+
+export const reloadOpenSession = (): Promise<void> => (openSessionId ? loadSession(openSessionId) : Promise.resolve())
+
+export async function reloadProviders(): Promise<void> {
+  const { providers } = await getJson<{ providers: ProviderInfo[] }>('/api/providers')
+  useApp.setState({ providers })
+}
+
+export function logout(): void {
+  localStorage.removeItem(TOKEN_KEY)
+  location.href = '/'
+}
+
+export function openPanel(panel: PanelId | null): void {
+  useApp.setState({ panel })
 }

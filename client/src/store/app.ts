@@ -58,7 +58,13 @@ export interface AppState {
   workflows: NamedItem[]
   sessionsHasMore: boolean
   execution: WorkflowExecution | null
+  panel: PanelId | null
+  display: Record<string, string>
+  unreadNotifications: number
+  requiresAuth: boolean
 }
+
+export type PanelId = 'tasks' | 'git' | 'processes' | 'mcp' | 'notifications' | 'settings'
 
 export interface NamedItem {
   id: string
@@ -77,7 +83,10 @@ export interface AgentInfo {
 export interface ProviderInfo {
   id: string
   name: string
-  models: Array<{ id: string }>
+  models: Array<{ id: string; reasoningEfforts?: string[] }>
+  isActive?: boolean
+  url?: string
+  status?: string
 }
 
 export const SESSION_DEFAULTS = {
@@ -110,6 +119,10 @@ export const useApp = create<AppState>(() => ({
   commands: [],
   workflows: [],
   sessionsHasMore: false,
+  panel: null,
+  display: {},
+  unreadNotifications: 0,
+  requiresAuth: false,
   ...SESSION_DEFAULTS,
 }))
 
@@ -259,6 +272,9 @@ export function applyAppMessage(message: ServerMessage): void {
       })
       return
     }
+    case 'plugin.notification':
+      useApp.setState({ unreadNotifications: state.unreadNotifications + 1 })
+      return
     case 'queue.state':
       if (isOpen) useApp.setState({ queue: (message.payload as QueueStatePayload).messages ?? [] })
       return

@@ -29,6 +29,10 @@ export function navigate(path: string): void {
   listeners.forEach((listener) => listener())
 }
 
+export function usePath(): string {
+  return useSyncExternalStore(subscribeRoute, () => location.pathname)
+}
+
 export function useRoute(): Route {
   const path = useSyncExternalStore(subscribeRoute, () => location.pathname)
   return useMemo(() => parseRoute(path), [path])

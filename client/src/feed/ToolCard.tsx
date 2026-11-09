@@ -208,11 +208,12 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
     (call.result?.output?.length ?? 0) +
     (typeof call.arguments['content'] === 'string' ? call.arguments['content'].length : 0)
   const [toggled, setToggled] = useState<boolean | null>(null)
+  const verbose = useApp((state) => state.display['display.showVerboseToolOutput'] !== 'false')
 
   if (call.name === 'ask_user') return <AskUser call={call} />
   if (call.name === 'todo_write') return <Todos call={call} />
 
-  const expanded = toggled ?? (hasConfirmation || status === 'pending' || size < COLLAPSE_ABOVE_CHARS)
+  const expanded = toggled ?? (hasConfirmation || (verbose && (status === 'pending' || size < COLLAPSE_ABOVE_CHARS)))
   const label = formatToolArgsWithMetadata(call.name, call.arguments, call.result?.metadata)
 
   if (call.name === 'step_done') {

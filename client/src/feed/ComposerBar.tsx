@@ -53,8 +53,12 @@ function ModelPicker() {
   const providers = useApp((state) => state.providers)
   const selected = useApp((state) => state.session?.providerModel ?? state.model)
   const manual = useApp((state) => Boolean(state.session?.providerManual))
+  const providerId = useApp((state) => state.session?.providerId)
+  const activeEffort = useApp((state) => state.session?.providerReasoningEffort)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
+  const current = providers.find((provider) => provider.id === providerId)
+  const efforts = current?.models.find((model) => model.id === selected)?.reasoningEfforts ?? []
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -113,6 +117,29 @@ function ModelPicker() {
                 ))}
               </div>
             ))}
+            {efforts.length > 0 && current && (
+              <div className={styles.efforts}>
+                <span>
+                  {t({
+                    en: 'Effort (changing it resets the LLM cache)',
+                    fr: 'Effort (le changer réinitialise le cache LLM)',
+                  })}
+                </span>
+                {efforts.map((effort) => (
+                  <button
+                    key={effort}
+                    type="button"
+                    data-selected={effort === activeEffort || undefined}
+                    onClick={() => {
+                      setOpen(false)
+                      void selectModel(current.id, selected!, effort)
+                    }}
+                  >
+                    {effort}
+                  </button>
+                ))}
+              </div>
+            )}
             {groups.length === 0 && (
               <p className={styles.pickerEmpty}>{t({ en: 'No models match', fr: 'Aucun modèle ne correspond' })}</p>
             )}

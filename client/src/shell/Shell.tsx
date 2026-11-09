@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react'
+import { lazy, Suspense, useCallback, useRef } from 'react'
 import { Bot, FolderTree, GitCompareArrows } from 'lucide-react'
 import { t } from '../i18n'
+import { usePath } from '../router'
 import { useApp, type MobilePane } from '../store/app'
 import { AgentPanel } from './AgentPanel'
 import { Header } from './Header'
@@ -11,6 +12,10 @@ import { StatusBar } from './StatusBar'
 import { WorkspacePanel } from './WorkspacePanel'
 import styles from './Shell.module.css'
 
+const Panels = lazy(() => import('../panels/Panels'))
+const SplitView = lazy(() => import('./SplitView'))
+const EMBEDDED = new URLSearchParams(location.search).has('embed')
+
 const MOBILE_TABS = [
   { pane: 'project', icon: FolderTree, label: { en: 'Project', fr: 'Projet' } },
   { pane: 'agent', icon: Bot, label: { en: 'Agent', fr: 'Agent' } },
@@ -20,6 +25,8 @@ const MOBILE_TABS = [
 export function Shell() {
   const panesRef = useRef<HTMLDivElement | null>(null)
   const layout = useApp((state) => state.layout)
+  const panel = useApp((state) => state.panel)
+  const path = usePath()
   const mobilePane = useApp((state) => state.mobilePane)
   const leftCollapsed = useApp((state) => state.leftCollapsed)
   const rightCollapsed = useApp((state) => state.rightCollapsed)
@@ -28,8 +35,36 @@ export function Shell() {
     panesRef.current = element
   }, [])
 
+  if (EMBEDDED) {
+    return (
+      <div className={styles.embedded}>
+        <AgentPanel panes={panesRef} />
+      </div>
+    )
+  }
+
+  if (path === '/split-view') {
+    return (
+      <div className={styles.shell}>
+        <Header />
+        <div className={styles.main}>
+          <Rail />
+          <Suspense fallback={null}>
+            <SplitView />
+          </Suspense>
+        </div>
+        <StatusBar />
+      </div>
+    )
+  }
+
   return (
     <div className={styles.shell}>
+      {panel && (
+        <Suspense fallback={null}>
+          <Panels panel={panel} />
+        </Suspense>
+      )}
       <Header />
       <div className={styles.main}>
         <Rail />

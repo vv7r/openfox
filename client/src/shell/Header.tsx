@@ -1,14 +1,23 @@
-import { ChevronDown, GitBranch, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { ChevronDown, GitBranch, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { setLayout, toggleColumn } from '../controller'
+import { openPanel, setLayout, toggleColumn } from '../controller'
 import { t } from '../i18n'
 import { Link, navigate, useRoute } from '../router'
-import { useApp, type LayoutMode } from '../store/app'
+import { useApp, type LayoutMode, type PanelId } from '../store/app'
 import styles from './Shell.module.css'
 
 const LAYOUTS: Array<{ mode: LayoutMode; label: { en: string; fr: string } }> = [
   { mode: 'editor-first', label: { en: 'Editor-first', fr: 'Éditeur d’abord' } },
   { mode: 'agent-first', label: { en: 'Agent-first', fr: 'Agent d’abord' } },
+]
+
+const MOBILE_PANELS: Array<{ panel: PanelId; label: { en: string; fr: string } }> = [
+  { panel: 'tasks', label: { en: 'Tasks', fr: 'Tâches' } },
+  { panel: 'git', label: { en: 'Branches', fr: 'Branches' } },
+  { panel: 'processes', label: { en: 'Processes', fr: 'Processus' } },
+  { panel: 'mcp', label: { en: 'MCP servers', fr: 'Serveurs MCP' } },
+  { panel: 'notifications', label: { en: 'Notifications', fr: 'Notifications' } },
+  { panel: 'settings', label: { en: 'Settings', fr: 'Paramètres' } },
 ]
 
 function ProjectMenu() {
@@ -69,6 +78,20 @@ export function Header() {
         </>
       )}
       <div className={styles.grow} />
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger className={styles.mobileMenu} aria-label={t({ en: 'Menu', fr: 'Menu' })}>
+          <Menu size={18} />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content className={styles.menu} align="end" sideOffset={6}>
+            {MOBILE_PANELS.map(({ panel, label }) => (
+              <DropdownMenu.Item key={panel} className={styles.menuItem} onSelect={() => openPanel(panel)}>
+                {t(label)}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
       <div className={styles.segmented} role="group" aria-label={t({ en: 'Layout', fr: 'Disposition' })}>
         {LAYOUTS.map(({ mode, label }) => (
           <button key={mode} type="button" aria-pressed={layout === mode} onClick={() => setLayout(mode)}>

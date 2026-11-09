@@ -49,8 +49,8 @@ interface ProviderResponse {
 }
 
 /** Applies a provider change; the server answers with the session, possibly reshaped. */
-export async function selectModel(providerId: string, model: string): Promise<void> {
-  const response = await post('provider', { providerId, model })
+export async function selectModel(providerId: string, model: string, reasoningEffort?: string): Promise<void> {
+  const response = await post('provider', { providerId, model, ...(reasoningEffort ? { reasoningEffort } : {}) })
   if (!response?.ok) return
   const data = (await response.json()) as ProviderResponse
   useApp.setState({ session: data.session })

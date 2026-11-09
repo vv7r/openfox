@@ -6,6 +6,7 @@ import { t } from '../i18n'
 import { formatTime } from '../lib/format-stats'
 import { scanBlocks } from '../markdown/blocks'
 import { useMarkdownHtml } from '../markdown/cache'
+import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { toElements } from './elements'
 import type { FeedItem } from './items'
@@ -41,7 +42,7 @@ function Markdown({ text, streaming }: { text: string; streaming: boolean }) {
 }
 
 function Thinking({ text, active, duration }: { text: string; active: boolean; duration: number | undefined }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(useApp.getState().display['display.showThinking'] === 'true')
   const label = active
     ? t({ en: 'Thinking…', fr: 'Réflexion…' })
     : duration
@@ -75,6 +76,7 @@ function Stats({ stats }: { stats: NonNullable<Message['stats']> }) {
 
 function Assistant({ message }: { message: Message }) {
   const { thinking, elements } = toElements(message)
+  const showStats = useApp((state) => state.display['display.showStats'] !== 'false')
   const streaming = message.isStreaming === true
   return (
     <>
@@ -91,7 +93,7 @@ function Assistant({ message }: { message: Message }) {
           return <PreparingCard key={`p${element.preparing.index}`} preparing={element.preparing} />
         return <ToolCard key={element.call.id} call={element.call} />
       })}
-      {message.stats && <Stats stats={message.stats} />}
+      {showStats && message.stats && <Stats stats={message.stats} />}
       {message.partial && <div className={styles.notice}>{t({ en: 'Aborted', fr: 'Interrompu' })}</div>}
       {message.completeReason === 'truncated' && (
         <div className={styles.notice}>
@@ -130,7 +132,12 @@ function parseCard<T>(content: string): T | null {
 }
 
 function Other({ message }: { message: Message }) {
-  if (message.messageKind === 'auto-prompt' && message.isSystemGenerated) return <AutoPrompt message={message} />
+  const definitions = useApp((state) => state.display['display.showAgentDefinitions'] !== 'false')
+  const workflowBars = useApp((state) => state.display['display.showWorkflowBars'] !== 'false')
+  if (message.messageKind === 'auto-prompt' && message.isSystemGenerated)
+    return definitions ? <AutoPrompt message={message} /> : null
+  if (!workflowBars && (message.messageKind === 'workflow-started' || message.messageKind === 'task-completed'))
+    return null
   if (message.messageKind === 'context-reset') return <div className={styles.divider}>{message.content}</div>
   if (message.messageKind === 'workflow-started') {
     const card = parseCard<{ workflowName: string }>(message.content)
