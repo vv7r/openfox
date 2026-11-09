@@ -60,6 +60,8 @@ export interface AppState {
   skills: NamedItem[]
   autoLaunched: TaskAutoLaunch | null
   runningTasks: number
+  update: UpdateInfo
+  appDialog: 'update' | 'changelog' | null
   agentDialog: AgentDialog | null
   sessionsHasMore: boolean
   execution: WorkflowExecution | null
@@ -71,6 +73,12 @@ export interface AppState {
 }
 
 export type PanelId = 'tasks' | 'git' | 'processes' | 'mcp' | 'notifications' | 'settings'
+
+export interface UpdateInfo {
+  status: 'idle' | 'checking' | 'upToDate' | 'available' | 'error'
+  current: string | null
+  latest: string | null
+}
 
 export type AgentDialog = { kind: 'search' } | { kind: 'session-stats' } | { kind: 'turn-stats'; stats: MessageStats }
 
@@ -101,7 +109,7 @@ export interface AgentInfo {
 export interface ProviderInfo {
   id: string
   name: string
-  models: Array<{ id: string; reasoningEfforts?: string[] }>
+  models: Array<{ id: string; reasoningEfforts?: string[]; supportsVision?: boolean }>
   isActive?: boolean
   url?: string
   status?: string
@@ -140,6 +148,8 @@ export const useApp = create<AppState>(() => ({
   skills: [],
   autoLaunched: null,
   runningTasks: 0,
+  update: { status: 'idle', current: null, latest: null },
+  appDialog: null,
   sessionsHasMore: false,
   panel: null,
   display: {},

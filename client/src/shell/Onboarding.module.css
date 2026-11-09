@@ -1,0 +1,82 @@
+.page {
+  height: 100%;
+  overflow-y: auto;
+  background: rgb(var(--color-primary));
+  color: rgb(var(--color-text-primary));
+}
+
+.column {
+  position: relative;
+  width: min(640px, 100%);
+  margin: 0 auto;
+  padding: 48px 16px;
+}
+
+.close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+}
+
+.steps {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.steps button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.stepDot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgb(var(--color-bg-tertiary));
+}
+
+.steps li[data-state] .stepDot {
+  background: rgb(var(--color-accent-primary));
+  color: rgb(var(--color-on-accent));
+}
+
+.steps li[data-state='current'] button {
+  color: rgb(var(--color-text-primary));
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.lead {
+  margin: 0 0 20px;
+  color: rgb(var(--color-text-secondary));
+}
+
+@media (max-width: 560px) {
+  .stepLabel {
+    display: none;
+  }
+}

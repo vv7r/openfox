@@ -8,6 +8,7 @@ import { usePlugins } from '../plugins/store'
 import { useApp } from '../store/app'
 import { AdvancedTab, DisplayTab, InstructionsTab, ToolsTab } from './SettingsForms'
 import { PluginsTab, ProvidersTab, SkillsTab, WorkflowsTab } from './SettingsLists'
+import { NotificationSettingsTab } from './NotificationSettingsTab'
 import { AgentsTab } from './library/AgentsTab'
 import { CommandsTab } from './library/CommandsTab'
 import styles from './Panels.module.css'
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'providers', label: { en: 'Providers', fr: 'Fournisseurs' }, body: ProvidersTab },
   { id: 'display', label: { en: 'Display', fr: 'Affichage' }, body: DisplayTab },
   { id: 'tools', label: { en: 'Tools', fr: 'Outils' }, body: ToolsTab },
+  { id: 'notifications', label: { en: 'Notifications', fr: 'Notifications' }, body: NotificationSettingsTab },
   { id: 'agents', label: { en: 'Agents', fr: 'Agents' }, body: AgentsTab },
   { id: 'commands', label: { en: 'Commands', fr: 'Commandes' }, body: CommandsTab },
   { id: 'workflows', label: { en: 'Workflows', fr: 'Workflows' }, body: WorkflowsTab },

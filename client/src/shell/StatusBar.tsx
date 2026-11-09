@@ -7,6 +7,7 @@ export function StatusBar() {
   const git = useApp((state) => state.git)
   const connected = useApp((state) => state.connected)
   const version = useApp((state) => state.version)
+  const updateAvailable = useApp((state) => state.update.status === 'available')
   const files = git?.diff.files ?? []
   const additions = files.reduce((sum, file) => sum + file.additions, 0)
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0)
@@ -37,6 +38,16 @@ export function StatusBar() {
         </span>
       )}
       <div className={styles.grow} />
+      {updateAvailable && (
+        <button
+          type="button"
+          className={styles.updateChip}
+          data-testid="update-available"
+          onClick={() => useApp.setState({ appDialog: 'update' })}
+        >
+          {t({ en: 'Update available', fr: 'Mise à jour disponible' })}
+        </button>
+      )}
       <span className={styles.statusItem}>
         <span className={styles.connection} data-connected={connected || undefined} />
         {connected ? t({ en: 'Connected', fr: 'Connecté' }) : t({ en: 'Disconnected', fr: 'Déconnecté' })}

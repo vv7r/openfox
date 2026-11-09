@@ -988,3 +988,13 @@
   background: rgb(var(--color-bg-tertiary));
   color: rgb(var(--color-text-primary));
 }
+
+.updateChip {
+  padding: 0 6px;
+  border: 1px solid rgb(var(--color-accent-primary) / 0.5);
+  border-radius: 3px;
+  background: rgb(var(--color-accent-primary) / 0.12);
+  color: rgb(var(--color-accent-primary));
+  font: inherit;
+  cursor: pointer;
+}

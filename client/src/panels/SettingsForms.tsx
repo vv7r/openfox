@@ -230,9 +230,44 @@ export function ToolsTab() {
   )
 }
 
+function UpdateSection() {
+  const update = useApp((state) => state.update)
+  const version = useApp((state) => state.version)
+  const check = () => void import('../notify/startup').then((module) => module.checkForUpdate(true))
+  return (
+    <section className={styles.row} data-testid="update-section">
+      <span className={styles.grow}>
+        {t({ en: 'Version {{version}}', fr: 'Version {{version}}' }, { version: version ?? '' })}
+        {update.status === 'upToDate' && (
+          <span className={styles.muted}>{` · ${t({ en: 'up to date', fr: 'à jour' })}`}</span>
+        )}
+        {update.status === 'error' && (
+          <span className={styles.muted}>{` · ${t({ en: 'check failed', fr: 'vérification impossible' })}`}</span>
+        )}
+      </span>
+      <button type="button" disabled={update.status === 'checking'} onClick={check}>
+        {t({ en: 'Check for updates', fr: 'Rechercher une mise à jour' })}
+      </button>
+      {update.status === 'available' && (
+        <button
+          type="button"
+          className={styles.primary}
+          onClick={() => useApp.setState({ appDialog: 'update', panel: null })}
+        >
+          {t({ en: 'Update to {{version}}', fr: 'Mettre à jour vers {{version}}' }, { version: update.latest ?? '' })}
+        </button>
+      )}
+      <button type="button" onClick={() => useApp.setState({ appDialog: 'changelog', panel: null })}>
+        {t({ en: 'Changelog', fr: 'Journal des modifications' })}
+      </button>
+    </section>
+  )
+}
+
 export function AdvancedTab() {
   return (
     <>
+      <UpdateSection />
       <Toggles
         items={[
           { key: 'llm.dynamicSystemPrompt', label: { en: 'Dynamic system prompt', fr: 'Prompt système dynamique' } },

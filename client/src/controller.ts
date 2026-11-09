@@ -237,6 +237,8 @@ async function start(): Promise<void> {
     loadSettings(),
   ])
   useApp.setState({ projects, providers, version: config.version, model: config.model })
+  if (providers.length === 0 && location.pathname !== '/onboarding') navigate('/onboarding')
+  void import('./notify/startup').then((module) => module.start())
 }
 
 export async function boot(): Promise<void> {

@@ -5,27 +5,13 @@ import { createSession } from '../controller'
 import { t } from '../i18n'
 import { Link, useRoute } from '../router'
 import { useApp } from '../store/app'
+import { DirectoryList, useDirectoryBrowser } from './DirectoryBrowser'
 import styles from './Shell.module.css'
-
-interface Directory {
-  current: string
-  parent: string | null
-  directories: Array<{ name: string; path: string }>
-}
 
 function OpenProject() {
   const [path, setPath] = useState('')
-  const [browser, setBrowser] = useState<Directory | null>(null)
+  const { directory, browse } = useDirectoryBrowser(setPath)
   const [error, setError] = useState<string | null>(null)
-
-  const browse = (target: string) => {
-    void getJson<Directory>(`/api/directories${target ? `?path=${encodeURIComponent(target)}` : ''}`).then(
-      (directory) => {
-        setBrowser(directory)
-        setPath(directory.current)
-      },
-    )
-  }
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -41,7 +27,7 @@ function OpenProject() {
           className={styles.field}
           value={path}
           onChange={(event) => setPath(event.target.value)}
-          onFocus={() => browser === null && browse('')}
+          onFocus={() => directory === null && browse('')}
           placeholder={t({ en: 'Project folder', fr: 'Dossier du projet' })}
         />
         <button type="submit" className={styles.primary}>
@@ -49,20 +35,7 @@ function OpenProject() {
         </button>
       </form>
       {error && <p className={styles.error}>{error}</p>}
-      {browser && (
-        <div className={styles.browser}>
-          {browser.parent && (
-            <button type="button" onClick={() => browse(browser.parent!)}>
-              {t({ en: 'Parent folder', fr: 'Dossier parent' })}
-            </button>
-          )}
-          {browser.directories.map((directory) => (
-            <button key={directory.path} type="button" onClick={() => browse(directory.path)}>
-              {directory.name}
-            </button>
-          ))}
-        </div>
-      )}
+      <DirectoryList directory={directory} browse={browse} />
     </>
   )
 }
