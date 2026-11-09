@@ -23,6 +23,7 @@ import type {
   UserStepChoice,
   WorkflowExecution,
   WorkflowExecutionStatus,
+  MessageStats,
 } from '@shared/types.js'
 import type { Locale } from '@shared/i18n/index.js'
 
@@ -59,6 +60,7 @@ export interface AppState {
   skills: NamedItem[]
   autoLaunched: TaskAutoLaunch | null
   runningTasks: number
+  agentDialog: AgentDialog | null
   sessionsHasMore: boolean
   execution: WorkflowExecution | null
   panel: PanelId | null
@@ -69,6 +71,8 @@ export interface AppState {
 }
 
 export type PanelId = 'tasks' | 'git' | 'processes' | 'mcp' | 'notifications' | 'settings'
+
+export type AgentDialog = { kind: 'search' } | { kind: 'session-stats' } | { kind: 'turn-stats'; stats: MessageStats }
 
 export interface TaskAutoLaunch {
   taskId: string
@@ -114,6 +118,7 @@ export const SESSION_DEFAULTS = {
   queue: [],
   chatError: null,
   execution: null,
+  agentDialog: null,
 } satisfies Partial<AppState>
 
 export const useApp = create<AppState>(() => ({

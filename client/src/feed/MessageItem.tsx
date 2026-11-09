@@ -66,13 +66,18 @@ function Stats({ stats }: { stats: NonNullable<Message['stats']> }) {
   if ('error' in stats) return null
   const model = stats.model.split('/').pop() ?? stats.model
   return (
-    <div className={styles.stats} data-testid="message-stats">
+    <button
+      type="button"
+      className={styles.stats}
+      data-testid="message-stats"
+      onClick={() => useApp.setState({ agentDialog: { kind: 'turn-stats', stats } })}
+    >
       <span>{stats.reasoningEffort ? `${model}:${stats.reasoningEffort}` : model}</span>
       <span>{stats.mode}</span>
       <span>{formatTime(stats.totalTime)}</span>
       <span>{`${shortNumber(stats.prefillTokens)} @ ${shortNumber(stats.prefillSpeed)} pp`}</span>
       <span>{`${shortNumber(stats.generationTokens)} @ ${shortNumber(stats.generationSpeed)} tg`}</span>
-    </div>
+    </button>
   )
 }
 

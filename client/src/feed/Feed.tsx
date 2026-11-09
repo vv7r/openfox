@@ -1,8 +1,9 @@
-import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { deriveItems } from './items'
+import { registerFeedScroll } from './navigation'
 import { FeedRow } from './MessageItem'
 import styles from './Feed.module.css'
 
@@ -30,6 +31,15 @@ export function Feed() {
     const element = scroller.current
     if (element) stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
   }, [])
+
+  useEffect(
+    () =>
+      registerFeedScroll((index) => {
+        stuck.current = false
+        virtualizer.scrollToIndex(index, { align: 'center' })
+      }),
+    [virtualizer],
+  )
 
   const totalSize = virtualizer.getTotalSize()
   useLayoutEffect(() => {

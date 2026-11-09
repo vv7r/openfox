@@ -971,3 +971,20 @@
   font-size: 12.5px;
   cursor: pointer;
 }
+
+.agentSearch {
+  display: flex;
+  align-self: center;
+  margin-left: auto;
+  padding: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+}
+
+.agentSearch:hover {
+  background: rgb(var(--color-bg-tertiary));
+  color: rgb(var(--color-text-primary));
+}

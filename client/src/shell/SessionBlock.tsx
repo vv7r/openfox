@@ -55,10 +55,14 @@ function ContextGauge() {
   )
 }
 
-function Stats() {
+export function useMergedStats() {
   const base = useApp((state) => state.stats)
   const live = useApp((state) => state.liveStats)
-  const stats = live ? mergeLiveStats(base, live) : base
+  return live ? mergeLiveStats(base, live) : base
+}
+
+function Stats() {
+  const stats = useMergedStats()
   if (!stats) return null
   return (
     <div className={styles.stats} data-testid="session-stats">
@@ -92,6 +96,14 @@ function Stats() {
           </tbody>
         </table>
       )}
+      <button
+        type="button"
+        className={styles.textAction}
+        data-testid="session-stats-open"
+        onClick={() => useApp.setState({ agentDialog: { kind: 'session-stats' } })}
+      >
+        {t({ en: 'Details', fr: 'Détails' })}
+      </button>
     </div>
   )
 }
