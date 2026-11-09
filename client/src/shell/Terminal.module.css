@@ -1,0 +1,47 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px 6px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.tab[data-active] {
+  background: rgb(var(--color-bg-tertiary));
+}
+
+.tab button,
+.add {
+  display: flex;
+  padding: 2px 5px;
+  border: 0;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  font: 11px var(--font-mono);
+  cursor: pointer;
+}
+
+.host {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px;
+}
+
+.empty {
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  color: rgb(var(--color-text-muted));
+}

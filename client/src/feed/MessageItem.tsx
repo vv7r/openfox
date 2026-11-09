@@ -1,5 +1,7 @@
 import { memo, useRef, useState } from 'react'
+import { Copy, GitFork, Pencil, RotateCcw } from 'lucide-react'
 import type { Message } from '@shared/types.js'
+import { forkAt, replayMessage } from '../actions'
 import { t } from '../i18n'
 import { formatTime } from '../lib/format-stats'
 import { scanBlocks } from '../markdown/blocks'
@@ -145,9 +147,71 @@ function Other({ message }: { message: Message }) {
       return <div className={styles.divider}>{card.summary ?? t({ en: 'Task completed', fr: 'Tâche terminée' })}</div>
   }
   if (message.role === 'system') return <div className={styles.system}>{message.content}</div>
+  if (message.isSystemGenerated) {
+    return (
+      <div className={styles.user} data-system>
+        {message.content}
+      </div>
+    )
+  }
+  return <UserMessage message={message} />
+}
+
+function UserMessage({ message }: { message: Message }) {
+  const [draft, setDraft] = useState<string | null>(null)
+
+  if (draft !== null) {
+    return (
+      <div className={styles.editor}>
+        <textarea autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} />
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={styles.primaryAction}
+            onClick={() => {
+              setDraft(null)
+              void replayMessage(message.id, draft)
+            }}
+          >
+            {t({ en: 'Save and resend', fr: 'Enregistrer et renvoyer' })}
+          </button>
+          <button type="button" onClick={() => setDraft(null)}>
+            {t({ en: 'Cancel', fr: 'Annuler' })}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={styles.user} data-system={message.isSystemGenerated || undefined}>
-      {message.content}
+    <div className={styles.userRow}>
+      <div className={styles.messageActions}>
+        <button
+          type="button"
+          title={t({ en: 'Copy', fr: 'Copier' })}
+          onClick={() => void navigator.clipboard.writeText(message.content)}
+        >
+          <Copy size={13} />
+        </button>
+        <button type="button" title={t({ en: 'Edit', fr: 'Modifier' })} onClick={() => setDraft(message.content)}>
+          <Pencil size={13} />
+        </button>
+        <button
+          type="button"
+          title={t({ en: 'Resend', fr: 'Renvoyer' })}
+          onClick={() => void replayMessage(message.id)}
+        >
+          <RotateCcw size={13} />
+        </button>
+        <button
+          type="button"
+          title={t({ en: 'Fork from here', fr: 'Dupliquer depuis ici' })}
+          onClick={() => void forkAt(message.id)}
+        >
+          <GitFork size={13} />
+        </button>
+      </div>
+      <div className={styles.user}>{message.content}</div>
     </div>
   )
 }

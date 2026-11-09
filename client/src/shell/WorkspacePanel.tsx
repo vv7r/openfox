@@ -1,11 +1,12 @@
-import { lazy, Suspense } from 'react'
-import { X } from 'lucide-react'
+import { lazy, Suspense, useState } from 'react'
+import { SquareTerminal, X } from 'lucide-react'
 import { t } from '../i18n'
 import { useApp } from '../store/app'
 import { closeTab, openTab, selectTab, useWorkspace, type Tab } from '../store/workspace'
 import styles from './Shell.module.css'
 
 const CodeView = lazy(() => import('./CodeView'))
+const TerminalPanel = lazy(() => import('./TerminalPanel'))
 
 function Changes() {
   const files = useApp((state) => state.git?.diff.files)
@@ -53,6 +54,7 @@ export function WorkspacePanel() {
   const tabs = useWorkspace((state) => state.tabs)
   const activeKey = useWorkspace((state) => state.activeKey)
   const active = tabs.find((tab) => tab.key === activeKey) ?? null
+  const [terminalOpen, setTerminalOpen] = useState(false)
 
   return (
     <section className={styles.workspace} data-pane="workspace">
@@ -75,6 +77,24 @@ export function WorkspacePanel() {
           <Changes />
         )}
       </div>
+      <div className={styles.terminalBar}>
+        <button
+          type="button"
+          data-testid="terminal-toggle"
+          data-active={terminalOpen || undefined}
+          onClick={() => setTerminalOpen(!terminalOpen)}
+        >
+          <SquareTerminal size={14} />
+          {t({ en: 'Terminal', fr: 'Terminal' })}
+        </button>
+      </div>
+      {terminalOpen && (
+        <div className={styles.terminalPane}>
+          <Suspense fallback={null}>
+            <TerminalPanel />
+          </Suspense>
+        </div>
+      )}
     </section>
   )
 }

@@ -7,6 +7,8 @@ import { useApp } from '../store/app'
 import { ChatError } from './ChatError'
 import { SessionBlock } from './SessionBlock'
 import { Splitter } from './Splitter'
+import { WorkflowBar } from './WorkflowBar'
+import { Home } from './Home'
 import styles from './Shell.module.css'
 
 export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> }) {
@@ -29,10 +31,11 @@ export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> 
           <SessionBlock />
           <Feed key={sessionId} />
           <ChatError />
+          <WorkflowBar />
           <Composer />
         </>
       ) : (
-        <p className={styles.empty}>{t({ en: 'No session selected', fr: 'Aucune session sélectionnée' })}</p>
+        <Home />
       )}
     </section>
   )

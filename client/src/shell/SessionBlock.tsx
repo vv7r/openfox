@@ -78,6 +78,20 @@ function Stats() {
         <Stat label={t({ en: 'Cached', fr: 'En cache' })} value={formatTokens(stats.cachedPromptTokens)} />
       )}
       <Stat label={t({ en: 'LLM calls', fr: 'Appels LLM' })} value={stats.llmCallCount} />
+      {stats.modelGroups.length > 1 && (
+        <table className={styles.models}>
+          <tbody>
+            {stats.modelGroups.map((group) => (
+              <tr key={group.key}>
+                <td>{group.label}</td>
+                <td>{formatTokens(group.prefillTokens)}</td>
+                <td>{formatTokens(group.generationTokens)}</td>
+                <td>{formatTime(group.aiTime)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }

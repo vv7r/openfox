@@ -20,6 +20,9 @@ import type {
   Session,
   SessionStatsSummary,
   SessionSummary,
+  UserStepChoice,
+  WorkflowExecution,
+  WorkflowExecutionStatus,
 } from '@shared/types.js'
 import type { Locale } from '@shared/i18n/index.js'
 
@@ -51,6 +54,17 @@ export interface AppState {
   chatError: string | null
   agents: AgentInfo[]
   providers: ProviderInfo[]
+  commands: NamedItem[]
+  workflows: NamedItem[]
+  sessionsHasMore: boolean
+  execution: WorkflowExecution | null
+}
+
+export interface NamedItem {
+  id: string
+  name: string
+  description?: string
+  color?: string
 }
 
 export interface AgentInfo {
@@ -76,6 +90,7 @@ export const SESSION_DEFAULTS = {
   questions: [],
   queue: [],
   chatError: null,
+  execution: null,
 } satisfies Partial<AppState>
 
 export const useApp = create<AppState>(() => ({
@@ -92,6 +107,9 @@ export const useApp = create<AppState>(() => ({
   model: null,
   agents: [],
   providers: [],
+  commands: [],
+  workflows: [],
+  sessionsHasMore: false,
   ...SESSION_DEFAULTS,
 }))
 
@@ -205,6 +223,40 @@ export function applyAppMessage(message: ServerMessage): void {
     case 'chat.ask_user': {
       const payload = message.payload as ChatAskUserPayload
       if (isOpen) useApp.setState({ questions: upsertByCallId(state.questions, payload as PendingQuestionPayload) })
+      return
+    }
+    case 'workflow.execution_changed': {
+      if (!isOpen) return
+      const payload = message.payload as {
+        executionId: string
+        workflowId: string
+        workflowName: string
+        workflowColor?: string
+        status: WorkflowExecutionStatus
+        currentStepId?: string
+        currentStepName?: string
+        pendingChoices?: UserStepChoice[]
+      }
+      const base: WorkflowExecution = state.execution ?? {
+        id: payload.executionId,
+        sessionId: message.sessionId ?? '',
+        workflowId: payload.workflowId,
+        workflowName: payload.workflowName,
+        status: payload.status,
+        stepOutput: {},
+        params: {},
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      useApp.setState({
+        execution: {
+          ...base,
+          status: payload.status,
+          ...(payload.currentStepId ? { currentStepId: payload.currentStepId } : {}),
+          ...(payload.currentStepName ? { currentStepName: payload.currentStepName } : {}),
+          ...(payload.pendingChoices ? { pendingChoices: payload.pendingChoices } : {}),
+        },
+      })
       return
     }
     case 'queue.state':

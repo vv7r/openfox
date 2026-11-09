@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
 import { ChevronDown } from 'lucide-react'
-import { resetModel, selectModel, setDangerLevel, switchMode } from '../actions'
+import { launchWorkflow, resetModel, selectModel, setDangerLevel, switchMode } from '../actions'
 import { t } from '../i18n'
 import { useApp } from '../store/app'
 import styles from './Feed.module.css'
@@ -123,11 +123,38 @@ function ModelPicker() {
   )
 }
 
+function WorkflowMenu() {
+  const workflows = useApp((state) => state.workflows)
+  if (workflows.length === 0) return null
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger className={styles.barButton} data-testid="workflow-menu">
+        {t({ en: 'Workflows', fr: 'Workflows' })}
+        <ChevronDown size={13} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className={styles.menu} align="start" side="top" sideOffset={6}>
+          {workflows.map((workflow) => (
+            <DropdownMenu.Item
+              key={workflow.id}
+              className={styles.menuItem}
+              onSelect={() => launchWorkflow(workflow.id)}
+            >
+              <span style={{ color: workflow.color }}>{workflow.name}</span>
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
 export function ComposerBar() {
   return (
     <div className={styles.bar}>
       <AgentMenu />
       <DangerToggle />
+      <WorkflowMenu />
       <div className={styles.barSpacer} />
       <ModelPicker />
     </div>

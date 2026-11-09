@@ -246,3 +246,19 @@
   font-size: 12px;
   cursor: pointer;
 }
+
+.models {
+  grid-column: 1 / -1;
+  width: 100%;
+  border-collapse: collapse;
+  font: 11.5px var(--font-mono);
+  color: rgb(var(--color-text-secondary));
+}
+
+.models td {
+  padding: 2px 8px 2px 0;
+}
+
+.models td:first-child {
+  word-break: break-all;
+}

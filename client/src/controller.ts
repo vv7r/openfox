@@ -1,5 +1,13 @@
-import type { GitStatusPayload, ServerMessage } from '@shared/protocol.js'
-import type { ContextState, Message, Project, Session, SessionStatsSummary, SessionSummary } from '@shared/types.js'
+import type { ClientMessageType, GitStatusPayload, ServerMessage } from '@shared/protocol.js'
+import type {
+  ContextState,
+  Message,
+  Project,
+  Session,
+  SessionStatsSummary,
+  SessionSummary,
+  WorkflowExecution,
+} from '@shared/types.js'
 import type { PendingPathConfirmationPayload, PendingQuestionPayload } from '@shared/protocol.js'
 import { TOKEN_KEY, getJson, readToken, sendJson } from './api'
 import { applyCachedLocale, applyLocale } from './i18n'
@@ -11,6 +19,7 @@ import {
   useApp,
   type AgentInfo,
   type LayoutMode,
+  type NamedItem,
   type ProviderInfo,
   type QueuedMessage,
 } from './store/app'
@@ -39,6 +48,7 @@ interface SessionResponse {
   sessionStats?: SessionStatsSummary | null
   contextState?: ContextState | null
   queueState?: QueuedMessage[]
+  activeWorkflowExecution?: WorkflowExecution | null
   pendingConfirmations?: PendingPathConfirmationPayload[]
   pendingQuestions?: PendingQuestionPayload[]
 }
@@ -57,6 +67,7 @@ function onMessage(message: ServerMessage): void {
   if (!acceptSequenced(message, message.sessionId === openSessionId)) return
   applyServerMessage(message)
   applyAppMessage(message)
+  messageListeners.forEach((listener) => listener(message))
   if (message.type === 'git.status' && message.sessionId === openSessionId) {
     refreshChangedTabs(message.payload as GitStatusPayload)
   }
@@ -72,6 +83,7 @@ async function loadSession(sessionId: string): Promise<void> {
     stats: data.sessionStats ?? null,
     context: data.contextState ?? null,
     queue: data.queueState ?? [],
+    execution: data.activeWorkflowExecution ?? null,
     confirmations: data.pendingConfirmations ?? [],
     questions: data.pendingQuestions ?? [],
     liveStats: null,
@@ -111,14 +123,30 @@ interface AgentsResponse {
 
 async function loadAgents(workdir: string): Promise<void> {
   const data = await getJson<AgentsResponse>(`/api/agents?workdir=${encodeURIComponent(workdir)}`)
-  useApp.setState({
-    agents: [...data.defaults, ...data.userItems, ...data.projectItems].filter((agent) => !agent.subagent),
-  })
+  useApp.setState({ agents: flatten(data as unknown as NamedLists).filter((agent) => !(agent as AgentInfo).subagent) })
+  const query = `?workdir=${encodeURIComponent(workdir)}`
+  const [commands, workflows] = await Promise.all([
+    getJson<NamedLists>(`/api/commands${query}`),
+    getJson<NamedLists>(`/api/workflows${query}`),
+  ])
+  useApp.setState({ commands: flatten(commands), workflows: flatten(workflows) })
+}
+
+interface NamedLists {
+  defaults: NamedItem[]
+  userItems: NamedItem[]
+  projectItems: NamedItem[]
+}
+
+function flatten(lists: NamedLists): NamedItem[] {
+  return [...lists.defaults, ...lists.userItems, ...lists.projectItems]
 }
 
 async function loadSessions(projectId: string): Promise<void> {
-  const data = await getJson<{ sessions: SessionSummary[] }>(`/api/sessions?projectId=${projectId}&limit=50`)
-  if (projectId === openProjectId) useApp.setState({ sessions: data.sessions })
+  const data = await getJson<{ sessions: SessionSummary[]; hasMore: boolean }>(
+    `/api/sessions?projectId=${projectId}&limit=50`,
+  )
+  if (projectId === openProjectId) useApp.setState({ sessions: data.sessions, sessionsHasMore: data.hasMore })
 }
 
 function syncRoute(route: Route = currentRoute()): void {
@@ -224,4 +252,39 @@ export async function createSession(projectId: string): Promise<void> {
   if (!response.ok) return
   const { session } = (await response.json()) as { session: { id: string } }
   navigate(`/p/${projectId}/s/${session.id}`)
+}
+
+type MessageListener = (message: ServerMessage) => void
+const messageListeners = new Set<MessageListener>()
+
+/** Lets lazy panels (terminal) hear server events without passing through the stores. */
+export function subscribeMessages(listener: MessageListener): () => void {
+  messageListeners.add(listener)
+  return () => messageListeners.delete(listener)
+}
+
+export function sendOverSocket(type: string, payload: unknown): boolean {
+  return socket.send(type as ClientMessageType, payload) !== null
+}
+
+export async function loadMoreSessions(): Promise<void> {
+  const { sessions } = useApp.getState()
+  if (!openProjectId) return
+  const projectId = openProjectId
+  const data = await getJson<{ sessions: SessionSummary[]; hasMore: boolean }>(
+    `/api/sessions?projectId=${projectId}&limit=50&offset=${sessions.length}`,
+  )
+  if (projectId !== openProjectId) return
+  const known = new Set(sessions.map((s) => s.id))
+  useApp.setState({
+    sessions: [...sessions, ...data.sessions.filter((s) => !known.has(s.id))],
+    sessionsHasMore: data.hasMore,
+  })
+}
+
+export const reloadSessions = (): Promise<void> => (openProjectId ? loadSessions(openProjectId) : Promise.resolve())
+
+export async function reloadProjects(): Promise<void> {
+  const { projects } = await getJson<{ projects: Project[] }>('/api/projects')
+  useApp.setState({ projects })
 }
