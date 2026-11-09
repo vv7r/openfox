@@ -1,6 +1,14 @@
-import type { Attachment, DangerLevel, MetadataEntry, Session, WorkflowExecution } from '@shared/types.js'
+import type {
+  Attachment,
+  DangerLevel,
+  MetadataEntry,
+  Session,
+  WorkflowExecution,
+  WorkflowLaunchScope,
+} from '@shared/types.js'
 import { authFetch, getJson, sendJson } from './api'
 import { reloadProjects, reloadSessions, sendOverSocket } from './controller'
+import { fillTemplate, templateParams } from './feed/launch'
 import { navigate } from './router'
 import { setHistory } from './store/feed'
 import { useApp } from './store/app'
@@ -117,8 +125,20 @@ export async function forkAt(messageId: string): Promise<void> {
 
 const withSession = (payload: Record<string, unknown>) => ({ sessionId: openSessionId(), ...payload })
 
-export function launchWorkflow(workflowId: string, params?: Record<string, string>): void {
-  sendOverSocket('runner.launch', withSession({ workflowId, scope: 'auto', ...(params ? { params } : {}) }))
+export function launchWorkflow(
+  workflowId: string,
+  params?: Record<string, string>,
+  options: { scope?: WorkflowLaunchScope; subGroup?: string } = {},
+): void {
+  sendOverSocket(
+    'runner.launch',
+    withSession({
+      workflowId,
+      scope: options.scope ?? 'auto',
+      ...(params ? { params } : {}),
+      ...(options.subGroup ? { subGroup: options.subGroup } : {}),
+    }),
+  )
 }
 
 export function continueWorkflow(execution: WorkflowExecution, userChoice?: string): void {
@@ -138,19 +158,32 @@ export function continueWorkflow(execution: WorkflowExecution, userChoice?: stri
 export const exitWorkflow = () => sendOverSocket('workflow.exit', withSession({}))
 export const retryLastTurn = () => sendOverSocket('chat.retry', withSession({}))
 
-/** Runs a slash command: its prompt, with {{params}} filled from positional arguments. */
-export async function runCommand(commandId: string, args: string[], workdir: string): Promise<void> {
+export async function loadCommand(
+  commandId: string,
+  workdir: string,
+): Promise<{ prompt: string; agentMode: string | undefined }> {
   const full = await getJson<{ prompt: string; metadata: { agentMode?: string } }>(
     `/api/commands/${encodeURIComponent(commandId)}?workdir=${encodeURIComponent(workdir)}`,
   )
-  const names = [...new Set([...full.prompt.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]!))]
-  const prompt = names.reduce(
-    (text, name, index) => (args[index] === undefined ? text : text.replaceAll(`{{${name}}}`, args[index])),
-    full.prompt,
+  return { prompt: full.prompt, agentMode: full.metadata.agentMode }
+}
+
+export async function sendCommand(
+  content: string,
+  agentMode: string | undefined,
+  attachments: Attachment[] = [],
+): Promise<void> {
+  if (agentMode && agentMode !== useApp.getState().session?.mode) await switchMode(agentMode)
+  await sendMessage({ content, messageKind: 'command', ...(attachments.length ? { attachments } : {}) })
+}
+
+/** Runs a slash command: its prompt, with {{params}} filled from positional arguments. */
+export async function runCommand(commandId: string, args: string[], workdir: string): Promise<void> {
+  const { prompt, agentMode } = await loadCommand(commandId, workdir)
+  const values = Object.fromEntries(
+    templateParams(prompt).flatMap((name, index) => (args[index] === undefined ? [] : [[name, args[index]]])),
   )
-  if (full.metadata.agentMode && full.metadata.agentMode !== useApp.getState().session?.mode)
-    await switchMode(full.metadata.agentMode)
-  await sendMessage({ content: prompt, messageKind: 'command' })
+  await sendCommand(fillTemplate(prompt, values), agentMode)
 }
 
 export async function renameSession(sessionId: string, title: string): Promise<void> {

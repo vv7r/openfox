@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { openProject } from '../actions'
 import { getJson } from '../api'
-import { createSession } from '../controller'
 import { t } from '../i18n'
 import { Link, useRoute } from '../router'
 import { useApp } from '../store/app'
@@ -78,9 +77,6 @@ export function Home() {
       <div className={styles.home}>
         <h1>{project?.name}</h1>
         <p className={styles.empty}>{t({ en: 'No session selected', fr: 'Aucune session sélectionnée' })}</p>
-        <button type="button" className={styles.primary} onClick={() => void createSession(projectId)}>
-          {t({ en: 'Create a new session', fr: 'Créer une nouvelle session' })}
-        </button>
       </div>
     )
   }

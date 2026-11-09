@@ -8,18 +8,27 @@ import { t } from '../i18n'
 import { PluginBadges, PluginZone, usePluginContext } from '../plugins/Slots'
 import { Link, useRoute } from '../router'
 import { useApp } from '../store/app'
-import { ProjectTree } from './ProjectTree'
 import styles from './Shell.module.css'
 
 function Projects() {
   const projects = useApp((state) => state.projects)
   return (
     <section className={styles.section}>
-      <h2 className={styles.eyebrow}>{t({ en: 'Projects', fr: 'Projets' })}</h2>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.eyebrow}>{t({ en: 'Projects', fr: 'Projets' })}</h2>
+        <button
+          type="button"
+          className={styles.textButton}
+          data-testid="new-project"
+          onClick={() => useApp.setState({ appDialog: 'new-project' })}
+        >
+          <Plus size={12} />
+          {t({ en: 'New', fr: 'Nouveau' })}
+        </button>
+      </div>
       {projects.map((project) => (
-        <Link key={project.id} href={`/p/${project.id}`} className={styles.row}>
-          <span className={styles.truncate}>{project.name}</span>
-          <span className={styles.rowMeta}>{project.workdir}</span>
+        <Link key={project.id} href={`/p/${project.id}`} className={styles.row} title={project.workdir}>
+          <span className={styles.projectName}>{project.name}</span>
         </Link>
       ))}
     </section>
@@ -184,7 +193,6 @@ export function LeftPanel() {
       <PluginZone id="sidebar" context={context}>
         <PluginZone id="sidebar.header" context={context} />
 
-        {sessionId && <ProjectTree />}
         <PluginZone id="sidebar.sessions_list" context={context}>
           {projectId ? <Sessions projectId={projectId} sessionId={sessionId} /> : <Projects />}
         </PluginZone>

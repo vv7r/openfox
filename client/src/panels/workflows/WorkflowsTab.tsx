@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Copy, Eye, Pencil, Plus } from 'lucide-react'
 import { getJson } from '../../api'
 import { useLoad } from '../../hooks'
 import { t } from '../../i18n'
+import { useApp } from '../../store/app'
 import panelStyles from '../Panels.module.css'
 import libraryStyles from '../library/Library.module.css'
 import { DeleteButton, Section } from '../library/LibraryParts'
@@ -56,6 +57,14 @@ export function WorkflowsTab() {
       }),
     )
   }
+
+  useEffect(() => {
+    const target = useApp.getState().settingsEdit
+    if (!target) return
+    useApp.setState({ settingsEdit: null })
+    open(target.id, target.scope, target.scope === 'builtin', false)
+    // One shot, on arriving from the composer's menu
+  }, [])
 
   const row = (workflow: WorkflowInfo, scope: WorkflowScope) => (
     <div key={workflow.id} className={libraryStyles.row} data-testid={`workflow-${workflow.id}`}>

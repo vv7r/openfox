@@ -3456,6 +3456,10 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return session ? (session.workspace ?? session.workdir) : undefined
     }),
   )
+  app.use(
+    '/api/projects/:id/workspace',
+    createWorkspaceFilesRoutes((projectId) => getProject(projectId)?.workdir),
+  )
 
   // Serve static web UI
   const webDir = resolve(__dirname, '../../web')

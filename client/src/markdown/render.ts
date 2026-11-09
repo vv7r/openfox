@@ -2,6 +2,9 @@ import { Marked, type Tokens } from 'marked'
 
 export type Highlight = (code: string, lang: string) => string | null
 
+/** Fence flag for code shown inside a card that folds on its own. */
+export const NO_FOLD = 'nofold'
+
 const SAFE_URL = /^(https?:|mailto:|#|\/|\.\/|\.\.\/)/i
 
 function escapeHtml(text: string): string {
@@ -29,9 +32,12 @@ export function renderMarkdown(source: string, highlight?: Highlight): string {
         return `<img src="${escapeHtml(token.href)}" alt="${escapeHtml(token.text)}" loading="lazy" />`
       },
       code(token: Tokens.Code) {
-        const lang = token.lang?.split(/\s/)[0] ?? ''
+        const words = (token.lang ?? '').split(/\s+/)
+        const lang = words.find((word) => word !== NO_FOLD) ?? ''
         const highlighted = lang && highlight ? highlight(token.text, lang) : null
-        return highlighted ?? `<pre><code>${escapeHtml(token.text)}</code></pre>`
+        const body = highlighted ?? `<pre><code>${escapeHtml(token.text)}</code></pre>`
+        if (words.includes(NO_FOLD)) return body
+        return `<details open><summary>${escapeHtml(lang || 'code')}</summary>${body}</details>`
       },
     },
   })

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import express from 'express'
@@ -38,6 +38,7 @@ describe('workspace files routes', () => {
     git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init')
 
     const app = express()
+    app.use(express.json({ limit: '5mb' }))
     app.use(
       '/api/sessions/:id/workspace',
       createWorkspaceFilesRoutes((id) => (id === 's1' ? workdir : undefined)),
@@ -81,7 +82,11 @@ describe('workspace files routes', () => {
 
   describe('file', () => {
     it('returns the content', async () => {
-      expect(await (await get('file', 'README.md')).json()).toEqual({ path: 'README.md', content: 'one\n' })
+      expect(await (await get('file', 'README.md')).json()).toMatchObject({
+        path: 'README.md',
+        content: 'one\n',
+        editable: true,
+      })
     })
 
     it.each(['../outside/secret.txt', 'src/../../outside/secret.txt'])('refuses the traversal %s', async (path) => {
@@ -165,6 +170,70 @@ describe('workspace files routes', () => {
         original: '',
         modified: 'one\n',
       })
+    })
+  })
+
+  describe('saving a file', () => {
+    const put = (path: string, body: unknown) =>
+      fetch(`${baseUrl}/api/sessions/s1/workspace/file?path=${encodeURIComponent(path)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const hashOf = async (path: string) => ((await (await get('file', path)).json()) as { hash: string }).hash
+
+    it('writes the file and returns the hash of what is now on disk', async () => {
+      const response = await put('README.md', { content: 'two\n', baseHash: await hashOf('README.md') })
+      expect(response.status).toBe(200)
+      expect(await readFile(join(workdir, 'README.md'), 'utf8')).toBe('two\n')
+      const { hash } = (await response.json()) as { hash: string }
+      expect(hash).toBe(await hashOf('README.md'))
+    })
+
+    it('refuses a save based on a version that changed on disk', async () => {
+      const baseHash = await hashOf('README.md')
+      await writeFile(join(workdir, 'README.md'), 'written by the agent\n')
+      expect((await put('README.md', { content: 'mine\n', baseHash })).status).toBe(409)
+      expect(await readFile(join(workdir, 'README.md'), 'utf8')).toBe('written by the agent\n')
+    })
+
+    it('overwrites when no base version is given', async () => {
+      await writeFile(join(workdir, 'README.md'), 'written by the agent\n')
+      expect((await put('README.md', { content: 'mine\n' })).status).toBe(200)
+      expect(await readFile(join(workdir, 'README.md'), 'utf8')).toBe('mine\n')
+    })
+
+    it('does not create files', async () => {
+      expect((await put('new.txt', { content: 'x' })).status).toBe(404)
+    })
+
+    it('rejects a body without text content', async () => {
+      expect((await put('README.md', { content: 3 })).status).toBe(400)
+    })
+
+    it('rejects content over the size limit', async () => {
+      expect((await put('README.md', { content: 'x'.repeat(MAX_FILE_BYTES + 1) })).status).toBe(413)
+    })
+
+    it.each(['../outside/secret.txt', '.git/config', '.env'])('refuses %s', async (path) => {
+      expect((await put(path, { content: 'x' })).status).toBe(403)
+    })
+
+    it('refuses a symlink that leaves the workspace', async () => {
+      await symlink(join(outside, 'secret.txt'), join(workdir, 'link.txt'))
+      expect((await put('link.txt', { content: 'x' })).status).toBe(403)
+      expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('outside')
+    })
+
+    it('leaves binary files alone', async () => {
+      await writeFile(join(workdir, 'a.bin'), Buffer.from([1, 0, 2]))
+      expect((await put('a.bin', { content: 'x' })).status).toBe(415)
+    })
+
+    it('leaves files that are not UTF-8 alone, rather than corrupting them', async () => {
+      await writeFile(join(workdir, 'latin.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9]))
+      expect((await put('latin.txt', { content: 'x' })).status).toBe(415)
+      expect((await readFile(join(workdir, 'latin.txt')))[3]).toBe(0xe9)
     })
   })
 })

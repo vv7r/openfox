@@ -23,9 +23,13 @@ import type {
   UserStepChoice,
   WorkflowExecution,
   WorkflowExecutionStatus,
+  WorkflowParameter,
+  WorkflowScope,
   MessageStats,
 } from '@shared/types.js'
 import type { Locale } from '@shared/i18n/index.js'
+
+export type AppDialog = 'update' | 'changelog' | 'new-project'
 
 export type LayoutMode = 'editor-first' | 'agent-first'
 export type MobilePane = 'project' | 'agent' | 'workspace'
@@ -61,7 +65,9 @@ export interface AppState {
   autoLaunched: TaskAutoLaunch | null
   runningTasks: number
   update: UpdateInfo
-  appDialog: 'update' | 'changelog' | null
+  appDialog: AppDialog | null
+  /** Folder new projects are created in. */
+  projectsRoot: string | null
   agentDialog: AgentDialog | null
   sessionsHasMore: boolean
   execution: WorkflowExecution | null
@@ -70,6 +76,8 @@ export interface AppState {
   unreadNotifications: number
   requiresAuth: boolean
   settingsTab: string | null
+  /** The item a settings tab should open straight into. */
+  settingsEdit: { id: string; scope?: WorkflowScope } | null
 }
 
 export type PanelId = 'tasks' | 'git' | 'processes' | 'mcp' | 'notifications' | 'settings'
@@ -80,7 +88,7 @@ export interface UpdateInfo {
   latest: string | null
 }
 
-export type AgentDialog = { kind: 'search' } | { kind: 'session-stats' } | { kind: 'turn-stats'; stats: MessageStats }
+export type AgentDialog = { kind: 'search' } | { kind: 'turn-stats'; stats: MessageStats }
 
 export interface TaskAutoLaunch {
   taskId: string
@@ -95,8 +103,12 @@ export interface NamedItem {
   description?: string
   color?: string
   /** Workflows declare their parameters, commands only name them. */
-  parameters?: Array<{ id: string }>
+  parameters?: WorkflowParameter[]
   paramNames?: string[]
+  /** Workflows only: the same id can exist in several scopes. */
+  scope?: WorkflowScope
+  subGroups?: string[]
+  startCondition?: { type: string }
 }
 
 export interface AgentInfo {
@@ -150,12 +162,14 @@ export const useApp = create<AppState>(() => ({
   runningTasks: 0,
   update: { status: 'idle', current: null, latest: null },
   appDialog: null,
+  projectsRoot: null,
   sessionsHasMore: false,
   panel: null,
   display: {},
   unreadNotifications: 0,
   requiresAuth: false,
   settingsTab: null,
+  settingsEdit: null,
   ...SESSION_DEFAULTS,
 }))
 

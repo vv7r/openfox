@@ -21,6 +21,10 @@
   transform: translateX(-50%);
 }
 
+.dialog[data-size='small'] {
+  width: min(420px, calc(100vw - 16px));
+}
+
 .dialog[data-panel='tasks'] {
   width: min(1280px, calc(100vw - 16px));
   height: 88vh;

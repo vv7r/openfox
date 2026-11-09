@@ -1,0 +1,153 @@
+.menu {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgb(var(--color-border));
+}
+
+.tabs button {
+  flex: 1;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tabs button:hover {
+  color: rgb(var(--color-text-primary));
+}
+
+.tabs button[aria-selected='true'] {
+  border-bottom-color: rgb(var(--color-accent-primary));
+  color: rgb(var(--color-accent-primary));
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  max-height: 256px;
+  padding: 0 4px 4px;
+  overflow-y: auto;
+}
+
+.empty {
+  margin: 0;
+  padding: 8px 12px;
+  color: rgb(var(--color-text-muted));
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+  border-radius: 4px;
+}
+
+.row:hover {
+  background: rgb(var(--color-bg-tertiary));
+}
+
+.pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.dot,
+.ready {
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+}
+
+.ready {
+  width: 6px;
+  height: 6px;
+  background: rgb(var(--color-accent-success));
+}
+
+.scope {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgb(var(--color-bg-tertiary));
+  color: rgb(var(--color-text-muted));
+  font-size: 10px;
+}
+
+.icon {
+  display: flex;
+  flex-shrink: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+}
+
+.icon:hover {
+  color: rgb(var(--color-text-primary));
+}
+
+.icon[data-reveal] {
+  opacity: 0;
+}
+
+.row:hover .icon[data-reveal],
+.icon[data-reveal]:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .icon[data-reveal] {
+    opacity: 1;
+  }
+}
+
+.manage {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid rgb(var(--color-border));
+  background: none;
+  color: rgb(var(--color-text-muted));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.manage:hover {
+  color: rgb(var(--color-text-primary));
+}

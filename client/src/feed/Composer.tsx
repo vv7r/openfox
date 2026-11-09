@@ -17,10 +17,14 @@ import { PluginActions, PluginZone, usePluginContext } from '../plugins/Slots'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { ComposerBar } from './ComposerBar'
+import type { ParamRequest } from './launch'
+import { MoreButton } from './MoreButton'
+import { trimTailDeletion, useInputHeight } from './useInputHeight'
 import { ParamHint, SuggestionList, useSuggestions } from './useSuggestions'
 import styles from './Feed.module.css'
 
 const QueuedMessages = lazy(() => import('./QueuedMessages'))
+const ParamsDialog = lazy(() => import('./ParamsDialog'))
 
 function userHistory(): string[] {
   const { ids, byId } = useFeed.getState()
@@ -36,9 +40,11 @@ export function Composer() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [cursor, setCursor] = useState(0)
+  const [paramRequest, setParamRequest] = useState<ParamRequest | null>(null)
   const historyIndex = useRef<number | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
+  const height = useInputHeight(input, text)
 
   const running = useApp((state) => state.session?.isRunning === true)
   const pauseState = useApp((state) => state.session?.pauseState ?? 'none')
@@ -182,25 +188,40 @@ export function Composer() {
         >
           <Paperclip size={16} />
         </button>
-        <textarea
-          ref={input}
-          className={styles.input}
-          data-testid="chat-input-textarea"
-          rows={2}
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value)
-            setCursor(event.target.selectionStart)
-            resetSelection()
-          }}
-          onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          placeholder={t({
-            en: 'Message the agent…  ( / commands, @ files )',
-            fr: 'Message à l’agent…  ( / commandes, @ fichiers )',
-          })}
-        />
+        <div className={styles.inputWrap}>
+          <div
+            className={styles.inputHandle}
+            data-testid="composer-resize"
+            role="separator"
+            aria-orientation="horizontal"
+            title={t({
+              en: 'Drag to resize, double-click for automatic height',
+              fr: 'Glisser pour redimensionner, double-cliquer pour la hauteur automatique',
+            })}
+            onPointerDown={height.startResize}
+            onDoubleClick={height.resetHeight}
+          />
+          <textarea
+            ref={input}
+            className={styles.input}
+            data-testid="chat-input-textarea"
+            rows={1}
+            value={text}
+            onChange={(event) => {
+              const value = trimTailDeletion(text, event.target.value)
+              setText(value)
+              setCursor(Math.min(event.target.selectionStart, value.length))
+              resetSelection()
+            }}
+            onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            placeholder={t({
+              en: 'Message the agent…  ( / commands, @ files )',
+              fr: 'Message à l’agent…  ( / commandes, @ fichiers )',
+            })}
+          />
+        </div>
         {running && (
           <>
             <button
@@ -225,16 +246,30 @@ export function Composer() {
             </button>
           </>
         )}
-        <button
-          className={styles.send}
-          type="submit"
-          data-testid="chat-send-button"
-          aria-label={t({ en: 'Send', fr: 'Envoyer' })}
-        >
-          <Send size={16} />
-        </button>
+        <div className={styles.sendGroup}>
+          <button
+            className={styles.send}
+            type="submit"
+            data-testid="chat-send-button"
+            aria-label={t({ en: 'Send', fr: 'Envoyer' })}
+          >
+            <Send size={16} />
+          </button>
+          <MoreButton
+            workdir={workdir}
+            typedText={text}
+            attachments={attachments}
+            clearComposer={clear}
+            askParams={setParamRequest}
+          />
+        </div>
       </form>
       <ComposerBar />
+      {paramRequest && (
+        <Suspense fallback={null}>
+          <ParamsDialog request={paramRequest} close={() => setParamRequest(null)} />
+        </Suspense>
+      )}
     </div>
   )
 }

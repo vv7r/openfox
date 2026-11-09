@@ -1,16 +1,11 @@
 import { ChevronDown, GitBranch, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { openPanel, setLayout, toggleColumn } from '../controller'
+import { openPanel, toggleColumn } from '../controller'
 import { t } from '../i18n'
 import { Link, navigate, useRoute } from '../router'
 import { PluginZone, usePluginContext } from '../plugins/Slots'
-import { useApp, type LayoutMode, type PanelId } from '../store/app'
+import { useApp, type PanelId } from '../store/app'
 import styles from './Shell.module.css'
-
-const LAYOUTS: Array<{ mode: LayoutMode; label: { en: string; fr: string } }> = [
-  { mode: 'editor-first', label: { en: 'Editor-first', fr: 'Éditeur d’abord' } },
-  { mode: 'agent-first', label: { en: 'Agent-first', fr: 'Agent d’abord' } },
-]
 
 const MOBILE_PANELS: Array<{ panel: PanelId; label: { en: string; fr: string } }> = [
   { panel: 'tasks', label: { en: 'Tasks', fr: 'Tâches' } },
@@ -45,6 +40,9 @@ function ProjectMenu() {
               {project.name}
             </DropdownMenu.Item>
           ))}
+          <DropdownMenu.Item className={styles.menuItem} onSelect={() => useApp.setState({ appDialog: 'new-project' })}>
+            {t({ en: 'New project…', fr: 'Nouveau projet…' })}
+          </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -53,11 +51,7 @@ function ProjectMenu() {
 
 export function Header() {
   const runningTasks = useApp((state) => state.runningTasks)
-  const layout = useApp((state) => state.layout)
   const branch = useApp((state) => state.git?.branch ?? null)
-  const running = useApp((state) => state.session?.isRunning === true)
-  const hasSession = useApp((state) => state.session !== null)
-  const model = useApp((state) => state.session?.providerModel ?? state.model)
   const rightCollapsed = useApp((state) => state.rightCollapsed)
   const pluginContext = usePluginContext()
   const RightToggle = rightCollapsed ? PanelRightOpen : PanelRightClose
@@ -76,7 +70,6 @@ export function Header() {
         </Link>
       </PluginZone>
       <span className={styles.divider} />
-      <span className={styles.muted}>{t({ en: 'Workspace', fr: 'Espace' })}</span>
       <ProjectMenu />
       {branch && (
         <>
@@ -105,20 +98,6 @@ export function Header() {
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
-      <div className={styles.segmented} role="group" aria-label={t({ en: 'Layout', fr: 'Disposition' })}>
-        {LAYOUTS.map(({ mode, label }) => (
-          <button key={mode} type="button" aria-pressed={layout === mode} onClick={() => setLayout(mode)}>
-            {t(label)}
-          </button>
-        ))}
-      </div>
-      {hasSession && (
-        <span className={styles.status} data-testid="agent-status">
-          <span className={styles.statusDot} data-running={running || undefined} />
-          {running ? t({ en: 'Agent running', fr: 'Agent en cours' }) : t({ en: 'Agent ready', fr: 'Agent prêt' })}
-        </span>
-      )}
-      {model && <span className={styles.model}>{model}</span>}
       <button
         type="button"
         className={styles.iconButton}

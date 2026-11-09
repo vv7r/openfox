@@ -1,4 +1,6 @@
 import type { PointerEvent, RefObject } from 'react'
+import { setLayout } from '../controller'
+import { t } from '../i18n'
 import { useApp } from '../store/app'
 import styles from './Shell.module.css'
 
@@ -22,6 +24,10 @@ export function restoreWidths(element: HTMLElement): void {
   }
 }
 
+function swapPanels(): void {
+  setLayout(useApp.getState().layout === 'editor-first' ? 'agent-first' : 'editor-first')
+}
+
 export function Splitter({ panes }: { panes: RefObject<HTMLDivElement | null> }) {
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const container = panes.current
@@ -35,8 +41,10 @@ export function Splitter({ panes }: { panes: RefObject<HTMLDivElement | null> })
     const startWidth = agent.getBoundingClientRect().width
     // The agent grows leftwards when it is the last column
     const direction = layout === 'editor-first' ? -1 : 1
-    const max = container.getBoundingClientRect().width - MIN_PANE_PX
-    let width = `${startWidth}px`
+    const other = container.querySelector('[data-pane="workspace"]')?.getBoundingClientRect().width ?? 0
+    const max = startWidth + other - MIN_PANE_PX
+    // Stays null on a plain click, which must not pin the current width
+    let width: string | null = null
 
     const handle = event.currentTarget
     const move = (e: globalThis.PointerEvent) => {
@@ -47,6 +55,7 @@ export function Splitter({ panes }: { panes: RefObject<HTMLDivElement | null> })
     const up = () => {
       handle.removeEventListener('pointermove', move)
       handle.removeEventListener('pointerup', up)
+      if (width === null) return
       try {
         localStorage.setItem(storageKey(layout), width)
       } catch {
@@ -57,5 +66,15 @@ export function Splitter({ panes }: { panes: RefObject<HTMLDivElement | null> })
     handle.addEventListener('pointerup', up)
   }
 
-  return <div className={styles.splitter} role="separator" aria-orientation="vertical" onPointerDown={onPointerDown} />
+  return (
+    <div
+      className={styles.splitter}
+      role="separator"
+      aria-orientation="vertical"
+      data-testid="panes-splitter"
+      title={t({ en: 'Double-click to swap the panels', fr: 'Double-cliquer pour intervertir les panneaux' })}
+      onPointerDown={onPointerDown}
+      onDoubleClick={swapPanels}
+    />
+  )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Copy, Eye, Pencil, Plus } from 'lucide-react'
 import { t } from '../../i18n'
 import { useApp } from '../../store/app'
@@ -65,6 +65,15 @@ export function CommandsTab() {
   const load = (id: string, builtIn: boolean, then: (draft: Draft) => void) => {
     void library.getItem(id, builtIn).then((item) => then(toDraft(item)))
   }
+
+  // Arriving from the composer's menu: only the loaded lists tell if it is built in
+  useEffect(() => {
+    const target = useApp.getState().settingsEdit
+    if (!target || !library.data) return
+    useApp.setState({ settingsEdit: null })
+    const custom = [...library.data.userItems, ...library.data.projectItems].some((item) => item.id === target.id)
+    load(target.id, !custom, (draft) => open(target.id, !custom, draft))
+  }, [library.data])
 
   const save = async () => {
     if (view.mode !== 'form') return

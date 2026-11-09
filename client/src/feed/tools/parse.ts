@@ -1,3 +1,4 @@
+import { NO_FOLD } from '../../markdown/render'
 import type { EditContextRegion, PreparingToolCall } from '@shared/types.js'
 
 export interface AnsiSegment {
@@ -67,7 +68,7 @@ export function parseAnsi(input: string): AnsiSegment[] {
 export function fencedCode(code: string, language: string): string {
   const longest = Math.max(2, ...Array.from(code.matchAll(/`+/g), (match) => match[0].length))
   const fence = '`'.repeat(longest + 1)
-  return `${fence}${language}\n${code}\n${fence}`
+  return `${fence}${language} ${NO_FOLD}\n${code}\n${fence}`
 }
 
 export function stripReadNumbers(content: string): string {

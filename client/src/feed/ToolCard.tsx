@@ -1,4 +1,5 @@
 import { memo, useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { normalizeAskOptions } from '@shared/ask-options.js'
 import type { PreparingToolCall, ToolCall } from '@shared/types.js'
 import { answerQuestion, confirmPath } from '../actions'
@@ -138,6 +139,7 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
     toggled ?? (hasConfirmation || (verbose && (!collapseLarge || status === 'pending' || size < COLLAPSE_ABOVE_CHARS)))
   const remote = views?.detectRemoteExecution(call.name, call.arguments) ?? null
   const label = formatToolArgsWithMetadata(call.name, call.arguments, call.result?.metadata)
+  const Chevron = expanded ? ChevronDown : ChevronRight
 
   if (call.name === 'step_done') {
     return (
@@ -150,7 +152,14 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
 
   return (
     <div className={styles.tool} data-testid="tool-card" data-remote={remote ? true : undefined}>
-      <button type="button" className={styles.toolHeader} data-status={status} onClick={() => setToggled(!expanded)}>
+      <button
+        type="button"
+        className={styles.toolHeader}
+        data-status={status}
+        aria-expanded={expanded}
+        onClick={() => setToggled(!expanded)}
+      >
+        <Chevron size={13} className={styles.toolChevron} />
         <span className={styles.toolStatus}>{STATUS_ICON[status]}</span>
         <span className={styles.toolName}>{call.name}</span>
         <span className={styles.toolArgs}>{label}</span>

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { getLocale } from '@shared/i18n/index.js'
 import { buildPerformanceChartData, buildResponseLogRows, type ResponseLogRow } from '@shared/stats-view.js'
+import { mergeLiveStats } from '@shared/stats.js'
 import type { CallStatsDataPoint, SessionStats } from '@shared/types.js'
 import { getJson } from '../api'
 import { t } from '../i18n'
@@ -10,7 +11,7 @@ import { formatSpeed, formatTime } from '../lib/format-stats'
 import panelStyles from '../panels/Panels.module.css'
 import { PluginZone } from '../plugins/Slots'
 import { useRoute } from '../router'
-import { useMergedStats } from './SessionBlock'
+import { useApp } from '../store/app'
 import { SpeedChart } from './SpeedChart'
 import { compactTokens, contextRange, statsExport } from './statsView'
 import styles from './AgentDialogs.module.css'
@@ -20,6 +21,12 @@ const AUTO_LOAD_RESPONSES = 50
 
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(getLocale(), { hour12: false })
 const rate = (value: number) => `${formatSpeed(value)} t/s`
+
+export function useMergedStats() {
+  const base = useApp((state) => state.stats)
+  const live = useApp((state) => state.liveStats)
+  return live ? mergeLiveStats(base, live) : base
+}
 
 export function StatCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
@@ -112,10 +119,11 @@ export function SessionStatsView() {
   }
 
   const autoLoad = responseCount > 0 && responseCount <= AUTO_LOAD_RESPONSES
+  // On opening and when a run starts or ends, never on each live update of a running session
+  const running = useApp((state) => state.session?.isRunning === true)
   useEffect(() => {
     if (autoLoad) void load()
-    // Once per opening: a running session must not refetch on every live update
-  }, [autoLoad])
+  }, [autoLoad, running])
 
   const groups = full?.modelGroups ?? summary?.modelGroups ?? []
   const group = groups.find((item) => item.key === modelKey) ?? groups[0]
@@ -187,6 +195,12 @@ export function SessionStatsView() {
               value={compactTokens(group.generationTokens)}
               detail={`@ ${rate(group.avgGenerationSpeed)}`}
             />
+            {summary?.cachedPromptTokens !== undefined && (
+              <StatCard
+                label={t({ en: 'Cached tokens', fr: 'Jetons en cache' })}
+                value={compactTokens(summary.cachedPromptTokens)}
+              />
+            )}
           </div>
           <PluginZone id="stats.modal.summary" context={{ sessionId }} />
         </section>

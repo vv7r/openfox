@@ -15,8 +15,11 @@ interface TerminalInfo {
 }
 
 const RESIZE_DEBOUNCE_MS = 100
+/** A shell's start-up output has ended once it stays quiet this long. */
+const SHELL_SETTLE_MS = 150
+const SHELL_START_TIMEOUT_MS = 2000
 
-function XTerm({ id }: { id: string }) {
+function XTerm({ id, isNew }: { id: string; isNew: boolean }) {
   const host = useRef<HTMLDivElement>(null)
   const connected = useApp((state) => state.connected)
 
@@ -41,13 +44,26 @@ function XTerm({ id }: { id: string }) {
     term.loadAddon(fit)
     term.open(element)
     fit.fit()
-    sendOverSocket('terminal.resize', { sessionId: id, cols: term.cols, rows: term.rows })
+
+    // A size sent while a new shell is still starting makes it print its prompt twice
+    let shellReady = !isNew
+    const sendSize = () => sendOverSocket('terminal.resize', { sessionId: id, cols: term.cols, rows: term.rows })
+    const markReady = () => {
+      if (shellReady) return
+      shellReady = true
+      sendSize()
+    }
+    if (shellReady) sendSize()
+    let settle: ReturnType<typeof setTimeout> | undefined = setTimeout(markReady, SHELL_START_TIMEOUT_MS)
 
     term.onData((data) => sendOverSocket('terminal.write', { sessionId: id, data }))
     const unsubscribe = subscribeMessages((message) => {
       const payload = message.payload as { sessionId?: string; data?: string } | undefined
-      if ((message.type as string) === 'terminal.output' && payload?.sessionId === id && payload.data)
-        term.write(payload.data)
+      if ((message.type as string) !== 'terminal.output' || payload?.sessionId !== id || !payload.data) return
+      term.write(payload.data)
+      if (shellReady) return
+      clearTimeout(settle)
+      settle = setTimeout(markReady, SHELL_SETTLE_MS)
     })
 
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -56,18 +72,19 @@ function XTerm({ id }: { id: string }) {
       timer = setTimeout(() => {
         if (element.clientWidth === 0) return
         fit.fit()
-        sendOverSocket('terminal.resize', { sessionId: id, cols: term.cols, rows: term.rows })
+        if (shellReady) sendSize()
       }, RESIZE_DEBOUNCE_MS)
     })
     observer.observe(element)
 
     return () => {
       clearTimeout(timer)
+      clearTimeout(settle)
       observer.disconnect()
       unsubscribe()
       term.dispose()
     }
-  }, [id])
+  }, [id, isNew])
 
   // A new socket starts with no subscriptions, so this follows every reconnect
   useEffect(() => {
@@ -82,11 +99,13 @@ export default function TerminalPanel() {
   const workdir = useApp((state) => state.session?.workspace ?? state.session?.workdir)
   const [terminals, setTerminals] = useState<TerminalInfo[] | null>(null)
   const [active, setActive] = useState<string | null>(null)
+  const justCreated = useRef<string | null>(null)
 
   const create = () => {
     void sendJson('/api/terminals', 'POST', { workdir, projectId })
       .then((response) => response.json() as Promise<TerminalInfo>)
       .then((created) => {
+        justCreated.current = created.id
         setTerminals((list) => [...(list ?? []), created])
         setActive(created.id)
       })
@@ -142,7 +161,7 @@ export default function TerminalPanel() {
         </button>
       </div>
       {active ? (
-        <XTerm key={active} id={active} />
+        <XTerm key={active} id={active} isNew={justCreated.current === active} />
       ) : (
         terminals && <p className={styles.empty}>{t({ en: 'No terminal open', fr: 'Aucun terminal ouvert' })}</p>
       )}

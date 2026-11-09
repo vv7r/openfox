@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Copy, GitFork, Pencil, RotateCcw } from 'lucide-react'
 import type { Message } from '@shared/types.js'
 import { forkAt, replayMessage } from '../actions'
@@ -15,10 +15,36 @@ import type { FeedItem } from './items'
 import { CriteriaCard, PreparingCard, ToolCard } from './ToolCard'
 import styles from './Feed.module.css'
 
+// The virtualized feed drops blocks scrolled out of view: what was folded must survive that
+const foldedCode = new Set<string>()
+
+function useCodeFolding(source: string, html: string | null) {
+  const host = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = host.current
+    if (!element || !html?.includes('<details')) return
+    const keyOf = (details: Element) =>
+      `${[...element.querySelectorAll('details')].indexOf(details as HTMLDetailsElement)}:${source}`
+    element.querySelectorAll('details').forEach((details) => {
+      if (foldedCode.has(keyOf(details))) details.open = false
+    })
+    // toggle does not bubble, but it can be captured
+    const onToggle = (event: Event) => {
+      const details = event.target as HTMLDetailsElement
+      if (details.open) foldedCode.delete(keyOf(details))
+      else foldedCode.add(keyOf(details))
+    }
+    element.addEventListener('toggle', onToggle, true)
+    return () => element.removeEventListener('toggle', onToggle, true)
+  }, [source, html])
+  return host
+}
+
 const Block = memo(function Block({ source }: { source: string }) {
   const html = useMarkdownHtml(source)
+  const host = useCodeFolding(source, html)
   if (html === null) return <div className={styles.pending}>{source}</div>
-  return <div className={styles.block} dangerouslySetInnerHTML={{ __html: html }} />
+  return <div ref={host} className={styles.block} dangerouslySetInnerHTML={{ __html: html }} />
 })
 
 /** Finished blocks never re-render; only the open tail changes on each frame. */

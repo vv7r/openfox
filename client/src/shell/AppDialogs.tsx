@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
+import { openProject } from '../actions'
 import { authFetch, getJson, sendJson } from '../api'
 import { Markdown } from '../feed/MessageItem'
 import { t } from '../i18n'
 import { changelogSince, markUpdateApplied } from '../notify/startup'
 import panelStyles from '../panels/Panels.module.css'
-import { useApp } from '../store/app'
+import { useApp, type AppDialog } from '../store/app'
 import styles from './AgentDialogs.module.css'
 
 type UpdateState = 'ready' | 'updating' | 'complete' | 'failed' | 'restarting' | 'restartFailed'
@@ -266,6 +267,82 @@ function ChangelogDialog() {
   )
 }
 
-export default function AppDialogs({ dialog }: { dialog: 'update' | 'changelog' }) {
+/** Letters, digits, `.`, `_` and `-`, as a folder name: never `.` or `..`. */
+export const isValidProjectName = (name: string): boolean => /^[\w.-]+$/.test(name) && !/^\.+$/.test(name)
+
+function NewProjectDialog() {
+  const root = useApp((state) => state.projectsRoot)
+  const [name, setName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const trimmed = name.trim()
+  const path = root && trimmed ? `${root.replace(/\/$/, '')}/${trimmed}` : null
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!path) return
+    if (!isValidProjectName(trimmed)) {
+      setError(
+        t({
+          en: 'Use only letters, numbers, hyphens, underscores and dots.',
+          fr: 'Utilisez uniquement des lettres, chiffres, tirets, tirets bas et points.',
+        }),
+      )
+      return
+    }
+    setBusy(true)
+    void openProject(trimmed, path).then((failure) => {
+      if (failure === null) {
+        close()
+        return
+      }
+      setError(failure)
+      setBusy(false)
+    })
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && close()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className={panelStyles.overlay} />
+        <Dialog.Content className={panelStyles.dialog} data-testid="new-project-dialog" aria-describedby={undefined}>
+          <div className={panelStyles.header}>
+            <Dialog.Title className={panelStyles.title}>
+              {t({ en: 'Create a new project', fr: 'Créer un nouveau projet' })}
+            </Dialog.Title>
+            <Dialog.Close className={panelStyles.close} aria-label={t({ en: 'Close', fr: 'Fermer' })}>
+              <X size={16} />
+            </Dialog.Close>
+          </div>
+          <form className={panelStyles.body} onSubmit={submit}>
+            <input
+              className={panelStyles.input}
+              data-testid="new-project-name"
+              autoFocus
+              value={name}
+              disabled={busy}
+              onChange={(event) => {
+                setName(event.target.value)
+                setError(null)
+              }}
+              placeholder={t({ en: 'my-project', fr: 'mon-projet' })}
+            />
+            {path && <p className={panelStyles.muted}>{path}</p>}
+            {error && <p className={panelStyles.error}>{error}</p>}
+            <div className={panelStyles.row}>
+              <span className={panelStyles.grow} />
+              <button type="submit" className={panelStyles.primary} disabled={busy || !path}>
+                {t({ en: 'Create', fr: 'Créer' })}
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
+export default function AppDialogs({ dialog }: { dialog: AppDialog }) {
+  if (dialog === 'new-project') return <NewProjectDialog />
   return dialog === 'update' ? <UpdateDialog /> : <ChangelogDialog />
 }

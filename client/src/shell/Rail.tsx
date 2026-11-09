@@ -1,7 +1,6 @@
 import type { ComponentType } from 'react'
 import {
   Bell,
-  Columns2,
   Cpu,
   GitBranch,
   House,
@@ -13,7 +12,7 @@ import {
   Plug,
   Settings,
 } from 'lucide-react'
-import { logout, openPanel, toggleColumn } from '../controller'
+import { logout, openPanel, showHomeColumns, toggleColumn } from '../controller'
 import { t } from '../i18n'
 import { PluginMenu } from '../plugins/PluginMenu'
 import { Link, usePath, useRoute } from '../router'
@@ -61,7 +60,9 @@ export function Rail() {
         href="/"
         className={styles.railItem}
         data-active={path === '/' || undefined}
+        data-testid="rail-home"
         title={t({ en: 'Home', fr: 'Accueil' })}
+        onClick={showHomeColumns}
       >
         <House size={20} />
       </Link>
@@ -98,14 +99,6 @@ export function Rail() {
         />
       )}
       {sessionId && <PanelButton panel="mcp" icon={Plug} label={t({ en: 'MCP servers', fr: 'Serveurs MCP' })} />}
-      <Link
-        href="/split-view"
-        className={styles.railItem}
-        data-active={path === '/split-view' || undefined}
-        title={t({ en: 'Split view', fr: 'Vue divisée' })}
-      >
-        <Columns2 size={20} />
-      </Link>
       <div className={styles.grow} />
       <PluginMenu
         classes={{ trigger: styles.railItem!, menu: styles.menu!, item: styles.menuItem!, group: styles.menuGroup! }}

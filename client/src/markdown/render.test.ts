@@ -3,6 +3,30 @@ import { describe, expect, it } from 'vitest'
 import { fenceLanguage, renderMarkdown } from './render'
 
 describe('renderMarkdown', () => {
+  it('makes fenced code foldable, open by default, labelled with its language', () => {
+    const html = renderMarkdown('```ts\nconst a = 1\n```')
+    expect(html).toMatch(/^<details open><summary>ts<\/summary><pre>/)
+    expect(html).toContain('</pre></details>')
+  })
+
+  it('labels code without a language', () => {
+    expect(renderMarkdown('```\na\n```')).toContain('<summary>code</summary>')
+  })
+
+  it('escapes the language label', () => {
+    expect(renderMarkdown('```<img/src=x>\na\n```')).not.toContain('<img')
+  })
+
+  it('leaves tool views unfolded when the fence asks for it', () => {
+    const seen: string[] = []
+    const html = renderMarkdown('```ts nofold\na\n```', (code, lang) => {
+      seen.push(lang)
+      return `<pre>${code}</pre>`
+    })
+    expect(seen).toEqual(['ts'])
+    expect(html).toBe('<pre>a</pre>')
+  })
+
   it('renders GFM tables', () => {
     expect(renderMarkdown('| a |\n| - |\n| b |')).toContain('<table>')
   })
@@ -43,7 +67,7 @@ describe('renderMarkdown', () => {
   })
 
   it('uses the highlighter output when it has one', () => {
-    expect(renderMarkdown('```ts\na\n```', () => '<pre>hl</pre>')).toBe('<pre>hl</pre>')
+    expect(renderMarkdown('```ts\na\n```', () => '<pre>hl</pre>')).toContain('<pre>hl</pre>')
   })
 })
 

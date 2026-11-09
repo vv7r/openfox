@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useRef } from 'react'
-import { Bot, FolderTree, GitCompareArrows } from 'lucide-react'
+import { Bot, Files, FolderTree } from 'lucide-react'
 import { t } from '../i18n'
 import { usePlugins } from '../plugins/store'
 import { usePath } from '../router'
@@ -23,7 +23,7 @@ const EMBEDDED = new URLSearchParams(location.search).has('embed')
 const MOBILE_TABS = [
   { pane: 'project', icon: FolderTree, label: { en: 'Project', fr: 'Projet' } },
   { pane: 'agent', icon: Bot, label: { en: 'Agent', fr: 'Agent' } },
-  { pane: 'workspace', icon: GitCompareArrows, label: { en: 'Changes', fr: 'Changements' } },
+  { pane: 'workspace', icon: Files, label: { en: 'Files', fr: 'Fichiers' } },
 ] as const satisfies ReadonlyArray<{ pane: MobilePane; icon: unknown; label: { en: string; fr: string } }>
 
 export function Shell() {

@@ -5,7 +5,6 @@ import { t } from '../i18n'
 import panelStyles from '../panels/Panels.module.css'
 import { useApp, type AgentDialog } from '../store/app'
 import { MessageSearch } from './MessageSearch'
-import { SessionStatsView } from './SessionStatsView'
 import { TurnStatsView } from './TurnStatsView'
 import styles from './AgentDialogs.module.css'
 
@@ -40,12 +39,6 @@ export default function AgentDialogs({ dialog }: { dialog: AgentDialog }) {
       return (
         <Frame narrow title={t({ en: 'Search timeline', fr: 'Rechercher dans la chronologie' })}>
           <MessageSearch onClose={close} />
-        </Frame>
-      )
-    case 'session-stats':
-      return (
-        <Frame title={t({ en: 'Session stats', fr: 'Statistiques de la session' })}>
-          <SessionStatsView />
         </Frame>
       )
     case 'turn-stats':

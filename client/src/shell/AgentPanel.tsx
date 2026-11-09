@@ -7,7 +7,6 @@ import { PluginBadges, PluginZone, usePluginContext } from '../plugins/Slots'
 import { useRoute } from '../router'
 import { useApp } from '../store/app'
 import { ChatError } from './ChatError'
-import { SessionBlock } from './SessionBlock'
 import { Splitter } from './Splitter'
 import { WorkflowBar } from './WorkflowBar'
 import { Home } from './Home'
@@ -52,7 +51,6 @@ export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> 
       </div>
       {sessionId ? (
         <>
-          <SessionBlock />
           <PluginZone id="session.content" context={pluginContext}>
             <Feed key={sessionId} />
           </PluginZone>

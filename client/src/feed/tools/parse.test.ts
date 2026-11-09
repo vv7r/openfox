@@ -37,8 +37,8 @@ describe('parseAnsi', () => {
 
 describe('fencedCode', () => {
   it('uses a fence longer than any run of backticks in the code', () => {
-    expect(fencedCode('a ```` b', 'ts')).toBe('`````ts\na ```` b\n`````')
-    expect(fencedCode('plain', 'ts')).toBe('```ts\nplain\n```')
+    expect(fencedCode('a ```` b', 'ts')).toBe('`````ts nofold\na ```` b\n`````')
+    expect(fencedCode('plain', 'ts')).toBe('```ts nofold\nplain\n```')
   })
 })
 

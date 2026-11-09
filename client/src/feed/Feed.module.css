@@ -92,8 +92,13 @@ button.toolHeader {
   cursor: pointer;
 }
 
-.toolStatus {
+.toolStatus,
+.toolChevron {
   flex-shrink: 0;
+}
+
+.toolChevron {
+  color: rgb(var(--color-text-muted));
 }
 
 .toolHeader[data-status='pending'] .toolStatus {
@@ -255,6 +260,21 @@ button.toolHeader {
   overflow-wrap: anywhere;
 }
 
+.block details {
+  margin: 0 0 0.75em;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgb(var(--color-bg-secondary));
+}
+
+.block summary {
+  padding: 4px 10px;
+  font: 11px var(--font-mono);
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+  user-select: none;
+}
+
 .block > :first-child {
   margin-top: 0;
 }
@@ -272,13 +292,18 @@ button.toolHeader {
   color: rgb(var(--color-text-code));
 }
 
+/* Code follows the width of the panel instead of scrolling sideways */
 .block pre {
-  margin: 0 0 0.75em;
+  margin: 0;
   padding: 10px 12px;
-  overflow-x: auto;
-  border-radius: 6px;
   background: rgb(var(--color-bg-secondary)) !important;
   font: 12.5px/1.45 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.block pre code {
+  white-space: inherit;
 }
 
 .block table {
@@ -301,13 +326,59 @@ button.toolHeader {
 
 .composer {
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
   gap: 8px;
   padding: 8px 8px 4px;
 }
 
+.inputWrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.inputHandle {
+  position: absolute;
+  top: -8px;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  height: 12px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.inputHandle::after {
+  content: '';
+  align-self: center;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgb(var(--color-text-muted));
+  opacity: 0;
+}
+
+.inputHandle:hover::after {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .inputHandle {
+    top: -12px;
+    height: 20px;
+  }
+
+  .inputHandle::after {
+    opacity: 0.6;
+  }
+}
+
 .input {
   flex: 1;
+  min-width: 0;
   min-height: 40px;
   padding: 8px 10px;
   resize: none;
@@ -318,12 +389,19 @@ button.toolHeader {
   font: inherit;
 }
 
+.input:placeholder-shown {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .send,
 .stop {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 44px;
+  height: 40px;
   border: 0;
   border-radius: 6px;
   cursor: pointer;
@@ -339,12 +417,83 @@ button.toolHeader {
   color: rgb(var(--color-accent-error));
 }
 
+.sendGroup {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.sendGroup .send {
+  border-radius: 6px 0 0 6px;
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 40px;
+  border: 1px solid rgb(var(--color-border));
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  background: rgb(var(--color-bg-secondary));
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+}
+
+.more:hover,
+.more[data-state='open'] {
+  background: rgb(var(--color-bg-tertiary));
+  color: rgb(var(--color-text-primary));
+}
+
+.paramField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.paramField small {
+  font-weight: 400;
+  color: rgb(var(--color-text-muted));
+}
+
+.paramRequired {
+  margin-left: 4px;
+  color: rgb(var(--color-accent-error));
+}
+
 .bar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 8px 6px;
   font-size: 12.5px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  color: rgb(var(--color-accent-primary));
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(var(--color-accent-primary));
+}
+
+.statusDot[data-running] {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .barSpacer {
@@ -364,6 +513,10 @@ button.toolHeader {
   color: rgb(var(--color-text-secondary));
   font: inherit;
   cursor: pointer;
+}
+
+.agentButton {
+  flex-shrink: 0;
 }
 
 .barButton:hover {
@@ -526,6 +679,7 @@ button.toolHeader {
   justify-content: center;
   flex-shrink: 0;
   width: 32px;
+  height: 40px;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -731,4 +885,10 @@ button.toolHeader {
 
 .tool[data-remote] .toolHeader {
   background: rgb(var(--color-text-thinking) / 0.1);
+}
+
+@media (max-width: 767px) {
+  .statusLabel {
+    display: none;
+  }
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
 import { ChevronDown } from 'lucide-react'
-import { launchWorkflow, resetModel, selectModel, setDangerLevel, switchMode } from '../actions'
+import { resetModel, selectModel, setDangerLevel, switchMode } from '../actions'
 import { t } from '../i18n'
 import { localize } from '../plugins/core'
 import { PluginZone, usePluginContext } from '../plugins/Slots'
@@ -17,7 +17,11 @@ function AgentMenu() {
   const current = agents.find((agent) => agent.id === mode)
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className={styles.barButton} data-testid="agent-menu" style={{ color: current?.color }}>
+      <DropdownMenu.Trigger
+        className={`${styles.barButton} ${styles.agentButton}`}
+        data-testid="agent-menu"
+        style={{ color: current?.color }}
+      >
         {current?.name ?? mode}
         <ChevronDown size={13} />
       </DropdownMenu.Trigger>
@@ -140,29 +144,14 @@ function ModelPicker() {
   )
 }
 
-function WorkflowMenu() {
-  const workflows = useApp((state) => state.workflows)
-  if (workflows.length === 0) return null
+function AgentStatus() {
+  const running = useApp((state) => state.session?.isRunning === true)
+  const label = running ? t({ en: 'Agent running', fr: 'Agent en cours' }) : t({ en: 'Agent ready', fr: 'Agent prêt' })
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger className={styles.barButton} data-testid="workflow-menu">
-        {t({ en: 'Workflows', fr: 'Workflows' })}
-        <ChevronDown size={13} />
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content className={styles.menu} align="start" side="top" sideOffset={6}>
-          {workflows.map((workflow) => (
-            <DropdownMenu.Item
-              key={workflow.id}
-              className={styles.menuItem}
-              onSelect={() => launchWorkflow(workflow.id)}
-            >
-              <span style={{ color: workflow.color }}>{workflow.name}</span>
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+    <span className={styles.status} data-testid="agent-status" title={label}>
+      <span className={styles.statusDot} data-running={running || undefined} />
+      <span className={styles.statusLabel}>{label}</span>
+    </span>
   )
 }
 
@@ -171,8 +160,8 @@ export function ComposerBar() {
     <div className={styles.bar}>
       <AgentMenu />
       <DangerToggle />
-      <WorkflowMenu />
       <div className={styles.barSpacer} />
+      <AgentStatus />
       <ModelPicker />
     </div>
   )

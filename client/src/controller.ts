@@ -1,4 +1,11 @@
-import type { ClientMessageType, GitStatusPayload, ServerMessage, TasksUpdatePayload } from '@shared/protocol.js'
+import type {
+  ChatToolResultPayload,
+  ClientMessageType,
+  ContextPreviewPayload,
+  GitStatusPayload,
+  ServerMessage,
+  TasksUpdatePayload,
+} from '@shared/protocol.js'
 import type {
   ContextState,
   Message,
@@ -23,9 +30,11 @@ import {
   type PanelId,
   type ProviderInfo,
   type QueuedMessage,
+  type AppState,
 } from './store/app'
-import { applyServerMessage, resetFeed, setHistory } from './store/feed'
-import { loadTree, refreshChangedTabs, resetWorkspace } from './store/workspace'
+import { applyServerMessage, resetFeed, setHistory, useFeed } from './store/feed'
+import { isWriteCall } from './feed/agentFiles'
+import { leaveWorkspace, loadTree, refreshAfterAgentWrite, refreshChangedTabs } from './store/workspace'
 import { SYSTEM_PREFS_KEY, USER_PRESETS_KEY, applyCachedTheme, applyTheme, applyThemeLibrary } from './theme/theme'
 import {
   acceptSequenced,
@@ -73,6 +82,7 @@ const socket: Socket = new Socket(onMessage, (status) => {
 
 let openSessionId: string | null = null
 let openProjectId: string | null = null
+let openWorkspace: string | null = null
 let historyLoaded = false
 
 function onMessage(message: ServerMessage): void {
@@ -89,6 +99,17 @@ function onMessage(message: ServerMessage): void {
   }
   if (message.type === 'git.status' && message.sessionId === openSessionId) {
     refreshChangedTabs(message.payload as GitStatusPayload)
+  }
+  if (
+    message.type === 'chat.tool_result' &&
+    message.sessionId === openSessionId &&
+    isWriteCall(
+      useFeed.getState(),
+      (message.payload as ChatToolResultPayload).messageId,
+      (message.payload as ChatToolResultPayload).callId,
+    )
+  ) {
+    refreshAfterAgentWrite()
   }
 }
 
@@ -187,6 +208,8 @@ async function loadSessions(projectId: string): Promise<void> {
   if (projectId === openProjectId) useApp.setState({ sessions: data.sessions, sessionsHasMore: data.hasMore })
 }
 
+let routeSynced = false
+
 function syncRoute(route: Route = currentRoute()): void {
   if (route.projectId !== openProjectId) {
     openProjectId = route.projectId
@@ -197,16 +220,20 @@ function syncRoute(route: Route = currentRoute()): void {
     }
   }
   if (route.sessionId !== openSessionId) {
+    if (route.sessionId && routeSynced) foldLeftColumn()
     openSessionId = route.sessionId
     historyLoaded = false
     resetFeed(route.sessionId)
-    resetWorkspace()
     useApp.setState({ ...SESSION_DEFAULTS, mobilePane: 'agent' })
-    if (route.sessionId) {
-      void loadSession(route.sessionId)
-      void loadTree('')
-    }
+    if (route.sessionId) void loadSession(route.sessionId)
   }
+  const workspace = route.sessionId ?? route.projectId
+  if (workspace !== openWorkspace) {
+    openWorkspace = workspace
+    leaveWorkspace()
+    if (workspace) void loadTree('')
+  }
+  routeSynced = true
 }
 
 async function loadSettings(): Promise<void> {
@@ -240,11 +267,11 @@ async function start(): Promise<void> {
   )
   const [{ projects }, config, { providers }] = await Promise.all([
     getJson<{ projects: Project[] }>('/api/projects'),
-    getJson<{ version: string | null; model: string | null }>('/api/config'),
+    getJson<{ version: string | null; model: string | null; workdir: string }>('/api/config'),
     getJson<{ providers: ProviderInfo[] }>('/api/providers'),
     loadSettings(),
   ])
-  useApp.setState({ projects, providers, version: config.version, model: config.model })
+  useApp.setState({ projects, providers, version: config.version, model: config.model, projectsRoot: config.workdir })
   if (providers.length === 0 && location.pathname !== '/onboarding') navigate('/onboarding')
   void import('./notify/startup').then((module) => module.start())
 }
@@ -284,12 +311,7 @@ function readCollapsed(): { left: boolean; right: boolean } {
   }
 }
 
-export function toggleColumn(side: 'left' | 'right'): void {
-  const state = useApp.getState()
-  const next = {
-    left: side === 'left' ? !state.leftCollapsed : state.leftCollapsed,
-    right: side === 'right' ? !state.rightCollapsed : state.rightCollapsed,
-  }
+function setColumns(next: { left: boolean; right: boolean }): void {
   useApp.setState({ leftCollapsed: next.left, rightCollapsed: next.right })
   try {
     localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next))
@@ -298,6 +320,22 @@ export function toggleColumn(side: 'left' | 'right'): void {
   }
 }
 
+export function toggleColumn(side: 'left' | 'right'): void {
+  const state = useApp.getState()
+  setColumns({
+    left: side === 'left' ? !state.leftCollapsed : state.leftCollapsed,
+    right: side === 'right' ? !state.rightCollapsed : state.rightCollapsed,
+  })
+}
+
+/** A session opened from the list gets the room; a reload keeps the columns as they were. */
+function foldLeftColumn(): void {
+  setColumns({ left: true, right: useApp.getState().rightCollapsed })
+}
+
+/** The home page lists projects on the left and has no use for the files. */
+export const showHomeColumns = (): void => setColumns({ left: false, right: true })
+
 export function setLayout(layout: LayoutMode): void {
   useApp.setState({ layout })
   void sendJson(`/api/settings/${LAYOUT_SETTING}`, 'PUT', { value: layout })
@@ -305,6 +343,34 @@ export function setLayout(layout: LayoutMode): void {
 
 export function compactContext(): void {
   if (openSessionId) socket.send('context.compact', { sessionId: openSessionId })
+}
+
+export function applyDynamicContext(): void {
+  if (openSessionId) socket.send('context.applyDynamic', { sessionId: openSessionId })
+}
+
+const PREVIEW_TIMEOUT_MS = 5000
+
+/** What applying the dynamic context would change; null if the server does not answer. */
+export function previewDynamicContext(): Promise<ContextPreviewPayload | null> {
+  return new Promise((done) => {
+    const requestId = openSessionId && socket.send('context.applyDynamic.preview', { sessionId: openSessionId })
+    if (!requestId) {
+      done(null)
+      return
+    }
+    const finish = (preview: ContextPreviewPayload | null) => {
+      clearTimeout(timer)
+      stop()
+      done(preview)
+    }
+    const timer = setTimeout(() => finish(null), PREVIEW_TIMEOUT_MS)
+    const stop = subscribeMessages((message) => {
+      if (message.id === requestId && message.type === 'context.preview') {
+        finish(message.payload as ContextPreviewPayload)
+      }
+    })
+  })
 }
 
 export async function createSession(projectId: string): Promise<void> {
@@ -381,6 +447,6 @@ export const reloadSessionLists = async (): Promise<void> => {
   if (workdir) await loadAgents(workdir)
 }
 
-export function showSettings(tab?: string): void {
-  useApp.setState({ panel: 'settings', settingsTab: tab ?? null })
+export function showSettings(tab?: string, edit?: AppState['settingsEdit']): void {
+  useApp.setState({ panel: 'settings', settingsTab: tab ?? null, settingsEdit: edit ?? null })
 }

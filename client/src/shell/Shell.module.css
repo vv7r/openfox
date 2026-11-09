@@ -106,68 +106,6 @@
   background: rgb(var(--color-bg-tertiary));
 }
 
-.segmented {
-  display: flex;
-  flex-shrink: 0;
-  padding: 2px;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: 6px;
-}
-
-.segmented button {
-  padding: 3px 10px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: none;
-  color: rgb(var(--color-text-muted));
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.segmented button[aria-pressed='true'] {
-  border-color: rgb(var(--color-accent-primary) / 0.7);
-  background: rgb(var(--color-accent-primary) / 0.12);
-  color: rgb(var(--color-accent-primary));
-}
-
-.status {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 8px;
-  font-size: 12.5px;
-  color: rgb(var(--color-accent-primary));
-}
-
-.statusDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgb(var(--color-accent-primary));
-}
-
-.statusDot[data-running] {
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.model {
-  flex-shrink: 1;
-  max-width: 220px;
-  padding: 3px 10px;
-  overflow: hidden;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: 6px;
-  font-size: 12.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .rail {
   display: flex;
   flex-direction: column;
@@ -215,6 +153,8 @@
 
 .panes {
   --left-w: 280px;
+  /* A width dragged with the left menu folded must still leave the files room once it opens */
+  --agent-w-fitted: max(240px, min(var(--agent-w), calc(100% - var(--left-w) - 320px)));
   --agent-w-editor-first: 33%;
   --agent-w-agent-first: 43%;
   display: grid;
@@ -224,32 +164,37 @@
 }
 
 .panes[data-layout='editor-first'] {
-  grid-template-columns: var(--left-w) minmax(0, 1fr) var(--agent-w-editor-first);
+  grid-template-columns: var(--left-w) minmax(0, 1fr) var(--agent-w-fitted);
+  --agent-w: var(--agent-w-editor-first);
 }
 
 .panes[data-layout='agent-first'] {
-  grid-template-columns: var(--left-w) var(--agent-w-agent-first) minmax(0, 1fr);
+  grid-template-columns: var(--left-w) var(--agent-w-fitted) minmax(0, 1fr);
+  --agent-w: var(--agent-w-agent-first);
 }
 
 .panes[data-left-collapsed] {
   --left-w: 0px;
 }
 
-.panes[data-right-collapsed] {
-  grid-template-columns: var(--left-w) minmax(0, 1fr) 0 !important;
-}
+/* A phone shows one pane at a time, whatever the desktop columns were left as */
+@media (min-width: 768px) {
+  .panes[data-right-collapsed] {
+    grid-template-columns: var(--left-w) minmax(0, 1fr) 0 !important;
+  }
 
-/* Collapsed panes stay mounted: hiding them keeps scroll, tabs and drafts */
-.panes[data-left-collapsed] .left,
-.panes[data-layout='editor-first'][data-right-collapsed] .agent,
-.panes[data-layout='agent-first'][data-right-collapsed] .workspace {
-  visibility: hidden;
-  overflow: hidden;
-  border: 0;
-}
+  /* Collapsed panes stay mounted: hiding them keeps scroll, tabs and drafts */
+  .panes[data-left-collapsed] .left,
+  .panes[data-layout='editor-first'][data-right-collapsed] .agent,
+  .panes[data-layout='agent-first'][data-right-collapsed] .workspace {
+    visibility: hidden;
+    overflow: hidden;
+    border: 0;
+  }
 
-.panes[data-layout='agent-first'][data-right-collapsed] .agent {
-  border-right: 0;
+  .panes[data-layout='agent-first'][data-right-collapsed] .agent {
+    border-right: 0;
+  }
 }
 
 .panes[data-right-collapsed] .splitter {
@@ -383,13 +328,9 @@
   color: rgb(var(--color-text-primary));
 }
 
-.rowMeta {
+.projectName {
   min-width: 0;
-  overflow: hidden;
-  font: 11px var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgb(var(--color-text-muted));
+  overflow-wrap: anywhere;
 }
 
 .runBadge {
@@ -405,6 +346,15 @@
   height: 44px;
   overflow-x: auto;
   border-bottom: 1px solid rgb(var(--color-border));
+}
+
+.fileTabs {
+  display: flex;
+  flex-shrink: 0;
+  height: 36px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgb(var(--color-border));
+  background: rgb(var(--color-secondary));
 }
 
 .tab {
@@ -475,13 +425,76 @@
   flex: 1;
 }
 
-.editor {
+.editorPane {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+}
+
+.editorBar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgb(var(--color-border));
+  font-size: 12px;
+}
+
+.editorBar button {
+  padding: 3px 10px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.editorBar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.editorPath {
+  flex: 1;
+  min-width: 80px;
+  font-family: var(--font-mono);
+  color: rgb(var(--color-text-muted));
+  overflow-wrap: anywhere;
+}
+
+.editorWarning {
+  color: rgb(var(--color-accent-warning));
+}
+
+.editorPane[data-locked] .editor {
+  opacity: 0.55;
+}
+
+.editor {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.tabBadge {
+  margin-left: 6px;
+  font: 11px var(--font-mono);
+  color: rgb(var(--color-text-muted));
+}
+
+.tabDirty {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: rgb(var(--color-accent-primary));
 }
 
 .treeSection {
   padding: 12px 8px;
-  border-bottom: 1px solid rgb(var(--color-border));
 }
 
 .treeRow {
@@ -499,14 +512,27 @@
   cursor: pointer;
 }
 
-.treeRow:hover {
+.treeRow:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: none;
+  color: rgb(var(--color-text-secondary));
+}
+
+.treeRow:hover:not(:disabled) {
   background: rgb(var(--color-bg-tertiary) / 0.6);
   color: rgb(var(--color-text-primary));
 }
 
-.treeChevron {
+.treeChevron,
+.treeIcon {
   flex-shrink: 0;
   width: 13px;
+}
+
+.treeName {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .added {
@@ -875,9 +901,6 @@
   .iconButton,
   .rail,
   .statusBar,
-  .segmented,
-  .status,
-  .model,
   .branch,
   .muted,
   .brand,

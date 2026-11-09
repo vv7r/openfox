@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { readdir, readFile, realpath, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Router, type Request, type Response } from 'express'
 import { gitSpawnEnv } from '../git/env.js'
@@ -52,12 +53,21 @@ function notFound(res: Response): void {
   res.status(404).json({ error: serverT({ en: 'Not found', fr: 'Introuvable' }) })
 }
 
-type TextRead = { text: string } | { binary: true } | { tooLarge: true }
+function refuse(res: Response, status: number, error: { en: string; fr: string }): void {
+  res.status(status).json({ error: serverT(error) })
+}
+
+const hashOf = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex')
+
+/** Saving decoded text back would damage a file that is not valid UTF-8. */
+const isUtf8 = (raw: Buffer): boolean => Buffer.from(raw.toString('utf8'), 'utf8').equals(raw)
+
+type TextRead = { text: string; hash: string; editable: boolean } | { binary: true } | { tooLarge: true }
 
 function decode(buffer: Buffer): TextRead {
   if (buffer.length > MAX_FILE_BYTES) return { tooLarge: true }
   if (buffer.includes(0)) return { binary: true }
-  return { text: buffer.toString('utf8') }
+  return { text: buffer.toString('utf8'), hash: hashOf(buffer), editable: isUtf8(buffer) }
 }
 
 async function readWorkingFile(absolute: string): Promise<TextRead | null> {
@@ -98,8 +108,8 @@ async function locateRequestedFile(req: Request, res: Response): Promise<Located
   return located
 }
 
-/** Read-only view of a session's workspace for the editor panes. */
-export function createWorkspaceFilesRoutes(getWorkdir: (sessionId: string) => string | undefined): Router {
+/** A session's or project's workspace, for the editor panes. Saving only ever replaces an existing text file. */
+export function createWorkspaceFilesRoutes(getWorkdir: (ownerId: string) => string | undefined): Router {
   const router = Router({ mergeParams: true })
 
   router.use((req, res, next) => {
@@ -145,7 +155,45 @@ export function createWorkspaceFilesRoutes(getWorkdir: (sessionId: string) => st
       notFound(res)
       return
     }
-    res.json('text' in read ? { path: located.relative, content: read.text } : { path: located.relative, ...read })
+    res.json(
+      'text' in read
+        ? { path: located.relative, content: read.text, hash: read.hash, editable: read.editable }
+        : { path: located.relative, ...read },
+    )
+  })
+
+  router.put('/file', async (req, res) => {
+    const located = await locateRequestedFile(req, res)
+    if (!located) return
+    const { content, baseHash } = (req.body ?? {}) as { content?: unknown; baseHash?: unknown }
+    if (typeof content !== 'string') {
+      refuse(res, 400, { en: 'content is required', fr: 'content est requis' })
+      return
+    }
+    if (Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES) {
+      refuse(res, 413, { en: 'File too large', fr: 'Fichier trop volumineux' })
+      return
+    }
+    const current = await readWorkingFile(located.absolute)
+    if (!current) {
+      notFound(res)
+      return
+    }
+    if (!('text' in current) || !current.editable) {
+      refuse(res, 415, { en: 'This file cannot be edited', fr: 'Ce fichier ne peut pas être modifié' })
+      return
+    }
+    if (typeof baseHash === 'string' && baseHash !== current.hash) {
+      refuse(res, 409, { en: 'The file changed on disk', fr: 'Le fichier a changé sur le disque' })
+      return
+    }
+    try {
+      await writeFile(located.absolute, content, 'utf8')
+    } catch {
+      refuse(res, 403, { en: 'The file cannot be written', fr: 'Le fichier ne peut pas être écrit' })
+      return
+    }
+    res.json({ path: located.relative, hash: hashOf(content) })
   })
 
   router.get('/diff', async (req, res) => {
