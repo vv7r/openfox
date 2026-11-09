@@ -30,6 +30,8 @@ export default defineConfig({
       'src/**/*.test.ts',
       'web/src/**/*.test.ts',
       'web/src/**/*.test.tsx',
+      'client/src/**/*.test.ts',
+      'client/src/**/*.test.tsx',
       'scripts/**/*.test.ts',
       'e2e-playwright/perf/**/*.test.ts',
       'eslint/**/*.test.ts',

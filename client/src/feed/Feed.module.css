@@ -1,0 +1,129 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  contain: strict;
+}
+
+.spacer {
+  position: relative;
+  width: 100%;
+}
+
+.item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 8px 16px;
+  contain: layout style;
+}
+
+.user {
+  margin-left: auto;
+  width: fit-content;
+  max-width: 80%;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 6px;
+  background: rgb(var(--color-bg-tertiary));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.thinking {
+  margin-bottom: 8px;
+  color: rgb(var(--color-text-muted));
+  white-space: pre-wrap;
+}
+
+.tool {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: rgb(var(--color-text-secondary));
+}
+
+.tail,
+.pending {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.block {
+  overflow-wrap: anywhere;
+}
+
+.block > :first-child {
+  margin-top: 0;
+}
+
+.block > :last-child {
+  margin-bottom: 0.75em;
+}
+
+.block a {
+  color: rgb(var(--color-text-link));
+}
+
+.block :not(pre) > code {
+  font: 12.5px var(--font-mono);
+  color: rgb(var(--color-text-code));
+}
+
+.block pre {
+  margin: 0 0 0.75em;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: rgb(var(--color-bg-secondary)) !important;
+  font: 12.5px/1.45 var(--font-mono);
+}
+
+.block table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.block td,
+.block th {
+  padding: 4px 8px;
+  border: 1px solid rgb(var(--color-border));
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid rgb(var(--color-border));
+  background: rgb(var(--color-secondary));
+}
+
+.input {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 10px;
+  resize: none;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 6px;
+  background: rgb(var(--color-primary));
+  color: inherit;
+  font: inherit;
+}
+
+.send {
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(var(--color-accent-primary));
+  color: rgb(var(--color-on-accent));
+  font: inherit;
+  font-weight: 600;
+}

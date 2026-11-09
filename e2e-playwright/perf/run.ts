@@ -113,6 +113,8 @@ const PROFILE_SETTINGS: Record<Profile, Array<[string, string]>> = {
 interface Options {
   runs: number
   skipBuild: boolean
+  /** Directory holding the built app to run (`dist/`), when it is not this checkout's. */
+  appDir: string
   scenarios: Scenario[]
   label: string | null
   compare: string | null
@@ -127,6 +129,7 @@ function parseOptions(): Options {
     options: {
       runs: { type: 'string', default: '3' },
       'skip-build': { type: 'boolean', default: false },
+      'app-dir': { type: 'string' },
       scenarios: { type: 'string', default: ALL_SCENARIOS.join(',') },
       label: { type: 'string' },
       compare: { type: 'string' },
@@ -142,7 +145,8 @@ function parseOptions(): Options {
   }
   return {
     runs: Math.max(1, Number(values.runs) || 1),
-    skipBuild: values['skip-build'] ?? false,
+    skipBuild: (values['skip-build'] ?? false) || values['app-dir'] !== undefined,
+    appDir: values['app-dir'] ?? REPO_ROOT,
     scenarios,
     label: values.label ?? null,
     compare: values.compare ?? null,
@@ -215,7 +219,7 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 }
 
 /** Boot the built app with a throwaway HOME: the real ~/.config/openfox is never read nor written. */
-async function bootApp(mock: MockOpenAI, profile: Profile, contextTokens: number): Promise<App> {
+async function bootApp(mock: MockOpenAI, profile: Profile, contextTokens: number, appDir: string): Promise<App> {
   const root = await mkdtemp(join(tmpdir(), 'openfox-perf-'))
   const home = join(root, 'home')
   const workdir = join(root, 'project')
@@ -240,7 +244,7 @@ async function bootApp(mock: MockOpenAI, profile: Profile, contextTokens: number
   const port = 20_000 + Math.floor(Math.random() * 20_000)
   const serverUrl = `http://127.0.0.1:${port}`
   const server: ChildProcess = spawn('node', ['dist/cli/index.js', '--port', String(port), '--no-browser'], {
-    cwd: REPO_ROOT,
+    cwd: appDir,
     env: {
       ...process.env,
       HOME: home,
@@ -831,7 +835,7 @@ async function runOnce(options: Options, index: number): Promise<Metrics> {
   let app: App | null = null
   let browser: Browser | null = null
   try {
-    app = await bootApp(mock, options.profile, options.context)
+    app = await bootApp(mock, options.profile, options.context, options.appDir)
     const booted = app
     const launched = await chromium.launch({ headless: true, args: ['--enable-precise-memory-info'] })
     browser = launched

@@ -1,0 +1,59 @@
+import { useEffect, useState } from 'react'
+
+const MAX_ENTRIES = 2000
+
+type Listener = (html: string) => void
+
+// Insertion order doubles as eviction order, so scrolling back through a
+// virtualized feed finds its blocks already parsed.
+const cache = new Map<string, string>()
+const pending = new Map<string, Listener[]>()
+const sourceById = new Map<number, string>()
+let nextId = 0
+let worker: Worker | null = null
+
+function getWorker(): Worker {
+  if (worker) return worker
+  worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<{ id: number; html: string }>) => {
+    const { id, html } = event.data
+    const source = sourceById.get(id)
+    if (source === undefined) return
+    sourceById.delete(id)
+    cache.set(source, html)
+    if (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value as string)
+    pending.get(source)?.forEach((listener) => listener(html))
+    pending.delete(source)
+  }
+  return worker
+}
+
+function request(source: string, listener: Listener): void {
+  const listeners = pending.get(source)
+  if (listeners) {
+    listeners.push(listener)
+    return
+  }
+  pending.set(source, [listener])
+  const id = nextId++
+  sourceById.set(id, source)
+  getWorker().postMessage({ id, source })
+}
+
+/** The block's HTML, or null while the worker has not produced it yet. */
+export function useMarkdownHtml(source: string): string | null {
+  const [state, setState] = useState(() => ({ source, html: cache.get(source) ?? null }))
+
+  useEffect(() => {
+    if (cache.has(source)) return
+    let active = true
+    request(source, (html) => {
+      if (active) setState({ source, html })
+    })
+    return () => {
+      active = false
+    }
+  }, [source])
+
+  return state.source === source ? state.html : (cache.get(source) ?? null)
+}
