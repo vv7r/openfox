@@ -179,6 +179,10 @@
 .railItem {
   position: relative;
   display: flex;
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
   align-items: center;
   justify-content: center;
   width: 40px;
@@ -222,6 +226,47 @@
 
 .panes[data-layout='agent-first'] {
   grid-template-columns: var(--left-w) var(--agent-w-agent-first) minmax(0, 1fr);
+}
+
+.panes[data-left-collapsed] {
+  --left-w: 0px;
+}
+
+.panes[data-right-collapsed] {
+  grid-template-columns: var(--left-w) minmax(0, 1fr) 0 !important;
+}
+
+/* Collapsed panes stay mounted: hiding them keeps scroll, tabs and drafts */
+.panes[data-left-collapsed] .left,
+.panes[data-layout='editor-first'][data-right-collapsed] .agent,
+.panes[data-layout='agent-first'][data-right-collapsed] .workspace {
+  visibility: hidden;
+  overflow: hidden;
+  border: 0;
+}
+
+.panes[data-layout='agent-first'][data-right-collapsed] .agent {
+  border-right: 0;
+}
+
+.panes[data-right-collapsed] .splitter {
+  display: none;
+}
+
+.iconButton {
+  display: flex;
+  flex-shrink: 0;
+  padding: 5px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: rgb(var(--color-bg-tertiary));
+  color: rgb(var(--color-text-primary));
 }
 
 .left {
@@ -571,6 +616,7 @@
     grid-template-rows: 40px minmax(0, 1fr) 52px;
   }
 
+  .iconButton,
   .rail,
   .statusBar,
   .segmented,

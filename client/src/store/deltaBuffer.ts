@@ -1,6 +1,13 @@
+export interface ToolChunk {
+  callId: string
+  stream: 'stdout' | 'stderr'
+  content: string
+}
+
 export interface PendingDelta {
   content: string
   thinking: string
+  tools: ToolChunk[]
 }
 
 const pending = new Map<string, PendingDelta>()
@@ -26,10 +33,22 @@ function schedule(): void {
 
 document.addEventListener('visibilitychange', schedule)
 
-export function bufferDelta(messageId: string, field: keyof PendingDelta, text: string): void {
-  const entry = pending.get(messageId) ?? { content: '', thinking: '' }
-  entry[field] += text
-  pending.set(messageId, entry)
+function entryFor(messageId: string): PendingDelta {
+  let entry = pending.get(messageId)
+  if (!entry) {
+    entry = { content: '', thinking: '', tools: [] }
+    pending.set(messageId, entry)
+  }
+  return entry
+}
+
+export function bufferDelta(messageId: string, field: 'content' | 'thinking', text: string): void {
+  entryFor(messageId)[field] += text
+  schedule()
+}
+
+export function bufferToolOutput(messageId: string, chunk: ToolChunk): void {
+  entryFor(messageId).tools.push(chunk)
   schedule()
 }
 

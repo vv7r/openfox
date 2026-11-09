@@ -53,9 +53,66 @@ describe('feed store', () => {
     expect(useFeed.getState().ids).toEqual(['m1'])
   })
 
-  it('does not let a snapshot replace loaded history', () => {
-    setHistory('s1', [message('m1')])
-    applyServerMessage(server('session.state', { session: { id: 's1' }, messages: [] }))
-    expect(useFeed.getState().ids).toEqual(['m1'])
+  it('applies a snapshot without losing text the live copy already has', () => {
+    setHistory('s1', [message('m1', 'streamed text')])
+    applyServerMessage(
+      server('session.state', { session: { id: 's1' }, messages: [message('m1', 'stream'), message('m2', 'x')] }),
+    )
+    expect(useFeed.getState().ids).toEqual(['m1', 'm2'])
+    expect(useFeed.getState().byId['m1']?.content).toBe('streamed text')
+  })
+
+  it('moves a preparing tool call to a real one, then attaches its result and drops the stream', () => {
+    applyServerMessage(server('chat.message', { message: message('m1') }))
+    applyServerMessage(
+      server('chat.tool_preparing', { messageId: 'm1', index: 0, name: 'run_command', arguments: '{' }),
+    )
+    expect(useFeed.getState().byId['m1']?.preparingToolCalls).toHaveLength(1)
+
+    applyServerMessage(
+      server('chat.tool_call', { messageId: 'm1', callId: 'c1', tool: 'run_command', args: { command: 'ls' } }),
+    )
+    expect(useFeed.getState().byId['m1']?.preparingToolCalls).toBeUndefined()
+
+    applyServerMessage(server('chat.tool_output', { messageId: 'm1', callId: 'c1', stream: 'stdout', output: 'a' }))
+    applyServerMessage(server('chat.tool_output', { messageId: 'm1', callId: 'c1', stream: 'stdout', output: 'b' }))
+    flushDeltas()
+    expect(useFeed.getState().byId['m1']?.toolCalls?.[0]?.streamingOutput?.[0]?.content).toBe('ab')
+
+    applyServerMessage(
+      server('chat.tool_result', {
+        messageId: 'm1',
+        callId: 'c1',
+        result: { success: true, durationMs: 1, truncated: false },
+      }),
+    )
+    const call = useFeed.getState().byId['m1']?.toolCalls?.[0]
+    expect(call?.result?.success).toBe(true)
+    expect(call?.streamingOutput).toBeUndefined()
+  })
+
+  it('keeps tool output that arrives before its tool call', () => {
+    applyServerMessage(server('chat.message', { message: message('m1') }))
+    applyServerMessage(server('chat.tool_output', { messageId: 'm1', callId: 'c1', stream: 'stdout', output: 'early' }))
+    flushDeltas()
+    applyServerMessage(server('chat.tool_call', { messageId: 'm1', callId: 'c1', tool: 't', args: {} }))
+    flushDeltas()
+    expect(useFeed.getState().byId['m1']?.toolCalls?.[0]?.streamingOutput?.[0]?.content).toBe('early')
+  })
+
+  it('never regresses streamed content on a message update', () => {
+    applyServerMessage(server('chat.message', { message: message('m1', 'long content') }))
+    applyServerMessage(server('chat.message_updated', { messageId: 'm1', updates: { content: 'long' } }))
+    expect(useFeed.getState().byId['m1']?.content).toBe('long content')
+  })
+
+  it('finishes a message on chat.done', () => {
+    applyServerMessage(server('chat.message', { message: { ...message('m1'), isStreaming: true } }))
+    applyServerMessage(server('chat.delta', { messageId: 'm1', content: 'a' }))
+    applyServerMessage(server('chat.done', { messageId: 'm1', reason: 'complete' }))
+    const done = useFeed.getState().byId['m1']
+    expect(done?.isStreaming).toBe(false)
+    expect(done?.content).toBe('a')
+    expect(done?.completeReason).toBe('complete')
   })
 })

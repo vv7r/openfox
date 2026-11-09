@@ -4,6 +4,8 @@ import { Feed } from '../feed/Feed'
 import { t } from '../i18n'
 import { useRoute } from '../router'
 import { useApp } from '../store/app'
+import { ChatError } from './ChatError'
+import { SessionBlock } from './SessionBlock'
 import { Splitter } from './Splitter'
 import styles from './Shell.module.css'
 
@@ -24,8 +26,10 @@ export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> 
       </div>
       {sessionId ? (
         <>
+          <SessionBlock />
           <Feed key={sessionId} />
-          <Composer sessionId={sessionId} />
+          <ChatError />
+          <Composer />
         </>
       ) : (
         <p className={styles.empty}>{t({ en: 'No session selected', fr: 'Aucune session sélectionnée' })}</p>

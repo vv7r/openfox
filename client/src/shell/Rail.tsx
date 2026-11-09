@@ -1,10 +1,14 @@
-import { House, MessagesSquare } from 'lucide-react'
+import { House, MessagesSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { toggleColumn } from '../controller'
 import { t } from '../i18n'
 import { Link, useRoute } from '../router'
+import { useApp } from '../store/app'
 import styles from './Shell.module.css'
 
 export function Rail() {
   const { projectId } = useRoute()
+  const collapsed = useApp((state) => state.leftCollapsed)
+  const Toggle = collapsed ? PanelLeftOpen : PanelLeftClose
   return (
     <nav className={styles.rail}>
       <Link
@@ -25,6 +29,19 @@ export function Rail() {
           <MessagesSquare size={20} />
         </Link>
       )}
+      <div className={styles.grow} />
+      <button
+        type="button"
+        className={styles.railItem}
+        title={
+          collapsed
+            ? t({ en: 'Show left panel', fr: 'Afficher le panneau gauche' })
+            : t({ en: 'Hide left panel', fr: 'Masquer le panneau gauche' })
+        }
+        onClick={() => toggleColumn('left')}
+      >
+        <Toggle size={20} />
+      </button>
     </nav>
   )
 }

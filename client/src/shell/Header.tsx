@@ -1,6 +1,6 @@
-import { ChevronDown, GitBranch } from 'lucide-react'
+import { ChevronDown, GitBranch, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { setLayout } from '../controller'
+import { setLayout, toggleColumn } from '../controller'
 import { t } from '../i18n'
 import { Link, navigate, useRoute } from '../router'
 import { useApp, type LayoutMode } from '../store/app'
@@ -47,6 +47,8 @@ export function Header() {
   const running = useApp((state) => state.session?.isRunning === true)
   const hasSession = useApp((state) => state.session !== null)
   const model = useApp((state) => state.session?.providerModel ?? state.model)
+  const rightCollapsed = useApp((state) => state.rightCollapsed)
+  const RightToggle = rightCollapsed ? PanelRightOpen : PanelRightClose
 
   return (
     <header className={styles.header}>
@@ -81,6 +83,18 @@ export function Header() {
         </span>
       )}
       {model && <span className={styles.model}>{model}</span>}
+      <button
+        type="button"
+        className={styles.iconButton}
+        title={
+          rightCollapsed
+            ? t({ en: 'Show right panel', fr: 'Afficher le panneau droit' })
+            : t({ en: 'Hide right panel', fr: 'Masquer le panneau droit' })
+        }
+        onClick={() => toggleColumn('right')}
+      >
+        <RightToggle size={18} />
+      </button>
     </header>
   )
 }

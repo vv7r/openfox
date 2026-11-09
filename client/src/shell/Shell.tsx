@@ -21,6 +21,8 @@ export function Shell() {
   const panesRef = useRef<HTMLDivElement | null>(null)
   const layout = useApp((state) => state.layout)
   const mobilePane = useApp((state) => state.mobilePane)
+  const leftCollapsed = useApp((state) => state.leftCollapsed)
+  const rightCollapsed = useApp((state) => state.rightCollapsed)
   const panes = useCallback((element: HTMLDivElement | null) => {
     if (element) restoreWidths(element)
     panesRef.current = element
@@ -33,7 +35,14 @@ export function Shell() {
         <Rail />
         {/* DOM order never changes: the layout only moves grid columns, so
             switching views keeps the feed's scroll and every pane's state. */}
-        <div ref={panes} className={styles.panes} data-layout={layout} data-mobile-pane={mobilePane}>
+        <div
+          ref={panes}
+          className={styles.panes}
+          data-layout={layout}
+          data-mobile-pane={mobilePane}
+          data-left-collapsed={leftCollapsed || undefined}
+          data-right-collapsed={rightCollapsed || undefined}
+        >
           <LeftPanel />
           <WorkspacePanel />
           <AgentPanel panes={panesRef} />

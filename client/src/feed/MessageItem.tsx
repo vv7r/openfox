@@ -1,8 +1,13 @@
-import { memo, useRef } from 'react'
+import { memo, useRef, useState } from 'react'
 import type { Message } from '@shared/types.js'
+import { t } from '../i18n'
+import { formatTime } from '../lib/format-stats'
 import { scanBlocks } from '../markdown/blocks'
 import { useMarkdownHtml } from '../markdown/cache'
 import { useFeed } from '../store/feed'
+import { toElements } from './elements'
+import type { FeedItem } from './items'
+import { PreparingCard, ToolCard } from './ToolCard'
 import styles from './Feed.module.css'
 
 const Block = memo(function Block({ source }: { source: string }) {
@@ -33,27 +38,156 @@ function Markdown({ text, streaming }: { text: string; streaming: boolean }) {
   )
 }
 
-function Body({ message }: { message: Message }) {
-  if (message.role === 'user') return <div className={styles.user}>{message.content}</div>
+function Thinking({ text, active, duration }: { text: string; active: boolean; duration: number | undefined }) {
+  const [open, setOpen] = useState(false)
+  const label = active
+    ? t({ en: 'Thinking…', fr: 'Réflexion…' })
+    : duration
+      ? t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(duration) })
+      : t({ en: 'Thought', fr: 'A réfléchi' })
+  return (
+    <div className={styles.thinking}>
+      <button type="button" onClick={() => setOpen(!open)}>
+        {label}
+      </button>
+      {open && <div className={styles.thinkingText}>{text}</div>}
+    </div>
+  )
+}
+
+const shortNumber = (value: number) => (value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0))
+
+function Stats({ stats }: { stats: NonNullable<Message['stats']> }) {
+  if ('error' in stats) return null
+  const model = stats.model.split('/').pop() ?? stats.model
+  return (
+    <div className={styles.stats} data-testid="message-stats">
+      <span>{stats.reasoningEffort ? `${model}:${stats.reasoningEffort}` : model}</span>
+      <span>{stats.mode}</span>
+      <span>{formatTime(stats.totalTime)}</span>
+      <span>{`${shortNumber(stats.prefillTokens)} @ ${shortNumber(stats.prefillSpeed)} pp`}</span>
+      <span>{`${shortNumber(stats.generationTokens)} @ ${shortNumber(stats.generationSpeed)} tg`}</span>
+    </div>
+  )
+}
+
+function Assistant({ message }: { message: Message }) {
+  const { thinking, elements } = toElements(message)
+  const streaming = message.isStreaming === true
   return (
     <>
-      {message.thinkingContent && (
-        <details className={styles.thinking}>
-          <summary>{'…'}</summary>
-          {message.thinkingContent}
-        </details>
+      {thinking && (
+        <Thinking
+          text={thinking}
+          active={streaming && elements.length === 0}
+          duration={message.stats?.thinkingDuration}
+        />
       )}
-      <Markdown text={message.content} streaming={message.isStreaming === true} />
-      {message.toolCalls?.map((call) => (
-        <div key={call.id} className={styles.tool}>
-          {call.name}
+      {elements.map((element, index) => {
+        if (element.type === 'text') return <Markdown key={index} text={element.content} streaming={streaming} />
+        if (element.type === 'preparing')
+          return <PreparingCard key={`p${element.preparing.index}`} preparing={element.preparing} />
+        return <ToolCard key={element.call.id} call={element.call} />
+      })}
+      {message.stats && <Stats stats={message.stats} />}
+      {message.partial && <div className={styles.notice}>{t({ en: 'Aborted', fr: 'Interrompu' })}</div>}
+      {message.completeReason === 'truncated' && (
+        <div className={styles.notice}>
+          {t({
+            en: 'Response was truncated: the model ran out of output tokens.',
+            fr: 'Réponse tronquée : le modèle a épuisé ses jetons de sortie.',
+          })}
         </div>
-      ))}
+      )}
     </>
   )
 }
 
-export const MessageItem = memo(function MessageItem({ id }: { id: string }) {
+function AutoPrompt({ message }: { message: Message }) {
+  const [open, setOpen] = useState(false)
+  const metadata = message.metadata
+  const kind =
+    metadata?.kind === 'reminder' ? t({ en: 'reminder', fr: 'rappel' }) : t({ en: 'instructions', fr: 'instructions' })
+  return (
+    <div className={styles.autoPrompt}>
+      <button type="button" onClick={() => setOpen(!open)}>
+        <span className={styles.autoPromptDot} style={{ background: metadata?.color ?? 'currentColor' }} />
+        <span>{`${metadata?.name ?? t({ en: 'Agent', fr: 'Agent' })} · ${kind}`}</span>
+      </button>
+      {open && <pre className={styles.toolOutput}>{message.content}</pre>}
+    </div>
+  )
+}
+
+function parseCard<T>(content: string): T | null {
+  try {
+    return JSON.parse(content) as T
+  } catch {
+    return null
+  }
+}
+
+function Other({ message }: { message: Message }) {
+  if (message.messageKind === 'auto-prompt' && message.isSystemGenerated) return <AutoPrompt message={message} />
+  if (message.messageKind === 'context-reset') return <div className={styles.divider}>{message.content}</div>
+  if (message.messageKind === 'workflow-started') {
+    const card = parseCard<{ workflowName: string }>(message.content)
+    if (card)
+      return (
+        <div className={styles.divider}>
+          {t({ en: 'Workflow started: {{name}}', fr: 'Workflow lancé : {{name}}' }, { name: card.workflowName })}
+        </div>
+      )
+  }
+  if (message.messageKind === 'task-completed') {
+    const card = parseCard<{ summary?: string }>(message.content)
+    if (card)
+      return <div className={styles.divider}>{card.summary ?? t({ en: 'Task completed', fr: 'Tâche terminée' })}</div>
+  }
+  if (message.role === 'system') return <div className={styles.system}>{message.content}</div>
+  return (
+    <div className={styles.user} data-system={message.isSystemGenerated || undefined}>
+      {message.content}
+    </div>
+  )
+}
+
+const MessageRow = memo(function MessageRow({ id }: { id: string }) {
   const message = useFeed((state) => state.byId[id])
-  return message ? <Body message={message} /> : null
+  if (!message) return null
+  return message.role === 'assistant' ? <Assistant message={message} /> : <Other message={message} />
+})
+
+function SubAgent({ item }: { item: Extract<FeedItem, { kind: 'subagent' }> }) {
+  const running = useFeed((state) => item.ids.some((id) => state.byId[id]?.isStreaming))
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={styles.subAgent}>
+      <button
+        type="button"
+        className={styles.toolHeader}
+        data-status={running ? 'pending' : 'success'}
+        onClick={() => setOpen(!open)}
+      >
+        <span className={styles.toolStatus}>{running ? '●' : '✓'}</span>
+        <span className={styles.toolName}>{item.subAgentType}</span>
+      </button>
+      {open && (
+        <div className={styles.subAgentBody}>
+          {item.ids.map((id) => (
+            <MessageRow key={id} id={id} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export const FeedRow = memo(function FeedRow({ item }: { item: FeedItem }) {
+  if (item.kind === 'divider')
+    return (
+      <div className={styles.divider}>{t({ en: 'Earlier context summarized', fr: 'Contexte antérieur résumé' })}</div>
+    )
+  if (item.kind === 'subagent') return <SubAgent item={item} />
+  return <MessageRow id={item.id} />
 })

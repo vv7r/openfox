@@ -1,7 +1,8 @@
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useFeed } from '../store/feed'
-import { MessageItem } from './MessageItem'
+import { deriveItems } from './items'
+import { FeedRow } from './MessageItem'
 import styles from './Feed.module.css'
 
 const STICK_THRESHOLD_PX = 64
@@ -10,11 +11,12 @@ export function Feed() {
   const ids = useFeed((state) => state.ids)
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
+  const items = useMemo(() => deriveItems(ids, useFeed.getState().byId), [ids])
 
   const virtualizer = useVirtualizer({
-    count: ids.length,
+    count: items.length,
     getScrollElement: () => scroller.current,
-    getItemKey: (index) => ids[index] ?? index,
+    getItemKey: (index) => items[index]?.key ?? index,
     estimateSize: () => 160,
     overscan: 3,
     useFlushSync: false,
@@ -29,7 +31,7 @@ export function Feed() {
   useLayoutEffect(() => {
     const element = scroller.current
     if (element && stuck.current) element.scrollTop = element.scrollHeight
-  }, [totalSize, ids.length])
+  }, [totalSize, items.length])
 
   return (
     <div ref={scroller} className={styles.scroller} data-testid="chat-scroll-container" onScroll={onScroll}>
@@ -43,7 +45,7 @@ export function Feed() {
             data-item-index={item.index}
             style={{ transform: `translateY(${item.start}px)` }}
           >
-            <MessageItem id={ids[item.index]!} />
+            <FeedRow item={items[item.index]!} />
           </div>
         ))}
       </div>
