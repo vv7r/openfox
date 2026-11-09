@@ -6,67 +6,12 @@ import { t } from '../i18n'
 import { formatToolArgsWithMetadata } from '../lib/formatToolArgs'
 import { deriveToolCallStatus, type ToolStatus } from '../lib/toolStatus'
 import { useApp } from '../store/app'
+import { useToolViews } from './tools/loader'
 import styles from './Feed.module.css'
 
 const COLLAPSE_ABOVE_CHARS = 600
-const MAX_SHOWN_CHARS = 40_000
 
 const STATUS_ICON: Record<ToolStatus, string> = { pending: '●', success: '✓', error: '✗', interrupted: '✗' }
-
-function Output({ text }: { text: string }) {
-  const shown = text.length > MAX_SHOWN_CHARS ? text.slice(-MAX_SHOWN_CHARS) : text
-  return <pre className={styles.toolOutput}>{shown}</pre>
-}
-
-function EditDiff({ call }: { call: ToolCall }) {
-  const regions = call.result?.editContext?.regions
-  if (!regions?.length) {
-    const oldText = String(call.arguments['old_string'] ?? '')
-    const newText = String(call.arguments['new_string'] ?? '')
-    return <DiffLines removed={oldText} added={newText} />
-  }
-  return (
-    <>
-      {regions.map((region, index) => (
-        <div key={index} className={styles.toolOutput}>
-          {region.beforeContext.map((line) => (
-            <div key={`b${line.lineNumber}`} className={styles.diffContext}>
-              {line.content}
-            </div>
-          ))}
-          {region.edits.map((edit, editIndex) => (
-            <DiffLines key={editIndex} removed={edit.oldContent} added={edit.newContent} bare />
-          ))}
-          {region.afterContext.map((line) => (
-            <div key={`a${line.lineNumber}`} className={styles.diffContext}>
-              {line.content}
-            </div>
-          ))}
-        </div>
-      ))}
-    </>
-  )
-}
-
-function DiffLines({ removed, added, bare = false }: { removed: string; added: string; bare?: boolean }) {
-  const body = (
-    <>
-      {removed &&
-        removed.split('\n').map((line, index) => (
-          <div key={`r${index}`} className={styles.diffRemoved}>
-            {line}
-          </div>
-        ))}
-      {added &&
-        added.split('\n').map((line, index) => (
-          <div key={`a${index}`} className={styles.diffAdded}>
-            {line}
-          </div>
-        ))}
-    </>
-  )
-  return bare ? body : <div className={styles.toolOutput}>{body}</div>
-}
 
 function PathConfirmation({ callId }: { callId: string }) {
   const confirmation = useApp((state) =>
@@ -173,32 +118,6 @@ function Todos({ call }: { call: ToolCall }) {
   )
 }
 
-function Details({ call }: { call: ToolCall }) {
-  const { name, arguments: args, result } = call
-  const streamed = call.streamingOutput?.map((chunk) => chunk.content).join('')
-  const failure = result?.error
-  return (
-    <div className={styles.toolBody}>
-      {name === 'run_command' && <code className={styles.command}>{String(args['command'] ?? '')}</code>}
-      {name === 'edit_file' && result?.success && <EditDiff call={call} />}
-      {name === 'write_file' && typeof args['content'] === 'string' && !result?.output && (
-        <Output text={args['content']} />
-      )}
-      {streamed && <Output text={streamed} />}
-      {result?.output && name !== 'edit_file' && <Output text={result.output} />}
-      {failure && <pre className={styles.toolError}>{failure}</pre>}
-      {result?.truncated && (
-        <span className={styles.toolNote}>{t({ en: 'Output truncated', fr: 'Sortie tronquée' })}</span>
-      )}
-      {result?.diagnostics?.map((diagnostic, index) => (
-        <div key={index} className={styles.toolNote}>
-          {`${diagnostic.severity} ${diagnostic.range.start.line + 1}: ${diagnostic.message}`}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
   const status = deriveToolCallStatus(call.result)
   const hasConfirmation = useApp((state) =>
@@ -209,11 +128,15 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
     (typeof call.arguments['content'] === 'string' ? call.arguments['content'].length : 0)
   const [toggled, setToggled] = useState<boolean | null>(null)
   const verbose = useApp((state) => state.display['display.showVerboseToolOutput'] !== 'false')
+  const collapseLarge = useApp((state) => state.display['display.collapseLargeToolCalls'] !== 'false')
+  const views = useToolViews()
 
   if (call.name === 'ask_user') return <AskUser call={call} />
   if (call.name === 'todo_write') return <Todos call={call} />
 
-  const expanded = toggled ?? (hasConfirmation || (verbose && (status === 'pending' || size < COLLAPSE_ABOVE_CHARS)))
+  const expanded =
+    toggled ?? (hasConfirmation || (verbose && (!collapseLarge || status === 'pending' || size < COLLAPSE_ABOVE_CHARS)))
+  const remote = views?.detectRemoteExecution(call.name, call.arguments) ?? null
   const label = formatToolArgsWithMetadata(call.name, call.arguments, call.result?.metadata)
 
   if (call.name === 'step_done') {
@@ -226,7 +149,7 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
   }
 
   return (
-    <div className={styles.tool} data-testid="tool-card">
+    <div className={styles.tool} data-testid="tool-card" data-remote={remote ? true : undefined}>
       <button type="button" className={styles.toolHeader} data-status={status} onClick={() => setToggled(!expanded)}>
         <span className={styles.toolStatus}>{STATUS_ICON[status]}</span>
         <span className={styles.toolName}>{call.name}</span>
@@ -235,22 +158,37 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
       </button>
       {expanded && (
         <>
+          {views && <views.ToolDetails call={call} status={status} remote={remote} />}
           <PathConfirmation callId={call.id} />
-          <Details call={call} />
         </>
       )}
     </div>
   )
 })
 
+export function CriteriaCard({ calls, preparing }: { calls: ToolCall[]; preparing: PreparingToolCall[] }) {
+  const views = useToolViews()
+  return views && <views.CriteriaGroup calls={calls} preparing={preparing} />
+}
+
 export function PreparingCard({ preparing }: { preparing: PreparingToolCall }) {
+  const views = useToolViews()
+  const showPreview = useApp(
+    (state) =>
+      state.display['display.showToolCallStreaming'] === 'true' &&
+      state.display['display.showVerboseToolOutput'] !== 'false',
+  )
+  const command =
+    preparing.name === 'run_command' && preparing.arguments ? views?.extractCommand(preparing.arguments) : null
+  const remote = command ? views?.detectRemoteCommand(command) : null
   return (
-    <div className={styles.tool}>
+    <div className={styles.tool} data-remote={remote ? true : undefined}>
       <div className={styles.toolHeader} data-status="pending">
         <span className={styles.toolStatus}>{STATUS_ICON.pending}</span>
         <span className={styles.toolName}>{preparing.name}</span>
-        <span className={styles.toolArgs}>{preparing.arguments?.slice(-160)}</span>
+        <span className={styles.toolArgs}>{command ?? preparing.arguments?.slice(-160)}</span>
       </div>
+      {showPreview && views && <views.PreparingPreview preparing={preparing} />}
     </div>
   )
 }

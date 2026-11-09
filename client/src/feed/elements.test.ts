@@ -43,3 +43,23 @@ describe('toElements', () => {
     expect(result).toEqual({ thinking: '', elements: [] })
   })
 })
+
+describe('criteria grouping', () => {
+  const call = (id: string, name: string) => ({ id, name, arguments: {} })
+
+  it('joins consecutive criterion calls and in-flight additions', () => {
+    const { elements } = toElements({
+      toolCalls: [call('a', 'criterion'), call('b', 'session_metadata')],
+      preparingToolCalls: [{ index: 0, name: 'session_metadata', arguments: '{"action":"add","key":"x"' }],
+    } as unknown as Parameters<typeof toElements>[0])
+    expect(elements).toHaveLength(1)
+    expect(elements[0]).toMatchObject({ type: 'criteria' })
+  })
+
+  it('starts a new group after another tool', () => {
+    const { elements } = toElements({
+      toolCalls: [call('a', 'criterion'), call('b', 'read_file'), call('c', 'criterion')],
+    } as unknown as Parameters<typeof toElements>[0])
+    expect(elements.map((element) => element.type)).toEqual(['criteria', 'tool', 'criteria'])
+  })
+})

@@ -129,28 +129,7 @@ button.toolHeader {
   font-size: 11px;
 }
 
-.toolBody {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-top: 1px solid rgb(var(--color-border));
-}
-
 .toolOutput,
-.toolError {
-  max-height: 320px;
-  margin: 0;
-  overflow: auto;
-  font: 12px/1.45 var(--font-mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.toolError {
-  color: rgb(var(--color-accent-error));
-}
-
 .toolNote,
 .notice {
   font-size: 11.5px;
@@ -160,23 +139,6 @@ button.toolHeader {
 .notice {
   margin-top: 4px;
   color: rgb(var(--color-accent-primary));
-}
-
-.command {
-  font: 12px var(--font-mono);
-  color: rgb(var(--color-text-code));
-}
-
-.diffRemoved {
-  background: rgb(var(--color-accent-error) / 0.14);
-}
-
-.diffAdded {
-  background: rgb(var(--color-accent-success) / 0.14);
-}
-
-.diffContext {
-  color: rgb(var(--color-text-muted));
 }
 
 .confirmation {
@@ -761,4 +723,12 @@ button.toolHeader {
   padding: 4px 10px 0;
   font-size: 12px;
   color: rgb(var(--color-text-muted));
+}
+
+.tool[data-remote] {
+  border-color: rgb(var(--color-text-thinking) / 0.6);
+}
+
+.tool[data-remote] .toolHeader {
+  background: rgb(var(--color-text-thinking) / 0.1);
 }

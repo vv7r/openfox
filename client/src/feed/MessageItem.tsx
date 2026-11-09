@@ -12,7 +12,7 @@ import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { toElements } from './elements'
 import type { FeedItem } from './items'
-import { PreparingCard, ToolCard } from './ToolCard'
+import { CriteriaCard, PreparingCard, ToolCard } from './ToolCard'
 import styles from './Feed.module.css'
 
 const Block = memo(function Block({ source }: { source: string }) {
@@ -22,7 +22,7 @@ const Block = memo(function Block({ source }: { source: string }) {
 })
 
 /** Finished blocks never re-render; only the open tail changes on each frame. */
-function Markdown({ text, streaming }: { text: string; streaming: boolean }) {
+export function Markdown({ text, streaming }: { text: string; streaming: boolean }) {
   const scan = useRef({ offset: 0, blocks: [] as string[], length: 0 })
   if (text.length < scan.current.length) scan.current = { offset: 0, blocks: [], length: 0 }
   const found = scanBlocks(text, scan.current.offset)
@@ -96,6 +96,9 @@ function Assistant({ message }: { message: Message }) {
       )}
       {elements.map((element, index) => {
         if (element.type === 'text') return <Markdown key={index} text={element.content} streaming={streaming} />
+        if (element.type === 'criteria') {
+          return <CriteriaCard key={index} calls={element.calls} preparing={element.preparing} />
+        }
         if (element.type === 'preparing')
           return <PreparingCard key={`p${element.preparing.index}`} preparing={element.preparing} />
         return <ToolCard key={element.call.id} call={element.call} />

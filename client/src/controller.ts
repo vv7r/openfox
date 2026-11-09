@@ -46,6 +46,10 @@ const FEED_DISPLAY_KEYS = [
   'display.showStats',
   'display.showAgentDefinitions',
   'display.showWorkflowBars',
+  'display.showToolCallStreaming',
+  'display.collapseLargeToolCalls',
+  'display.showOpenInEditorLinks',
+  'editor.vscodeRemotePrefix',
 ]
 const RESUME_TIMEOUT_MS = 10_000
 
