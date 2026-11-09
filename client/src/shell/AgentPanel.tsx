@@ -2,6 +2,7 @@ import type { RefObject } from 'react'
 import { Composer } from '../feed/Composer'
 import { Feed } from '../feed/Feed'
 import { t } from '../i18n'
+import { PluginBadges, PluginZone, usePluginContext } from '../plugins/Slots'
 import { useRoute } from '../router'
 import { useApp } from '../store/app'
 import { ChatError } from './ChatError'
@@ -13,6 +14,7 @@ import styles from './Shell.module.css'
 
 export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> }) {
   const { sessionId } = useRoute()
+  const pluginContext = usePluginContext()
   const mode = useApp((state) => state.session?.mode)
   const title = useApp((state) => state.session?.metadata.title)
 
@@ -25,14 +27,18 @@ export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> 
           {mode && ` / ${mode}`}
         </span>
         {title && <span className={styles.agentTitle}>{title}</span>}
+        <PluginBadges slot="session.header.badges" context={pluginContext} />
       </div>
       {sessionId ? (
         <>
           <SessionBlock />
-          <Feed key={sessionId} />
+          <PluginZone id="session.content" context={pluginContext}>
+            <Feed key={sessionId} />
+          </PluginZone>
           <ChatError />
           <WorkflowBar />
           <Composer />
+          <PluginZone id="session.footer" context={pluginContext} />
         </>
       ) : (
         <Home />

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useRef } from 'react'
 import { Bot, FolderTree, GitCompareArrows } from 'lucide-react'
 import { t } from '../i18n'
+import { usePlugins } from '../plugins/store'
 import { usePath } from '../router'
 import { useApp, type MobilePane } from '../store/app'
 import { AgentPanel } from './AgentPanel'
@@ -13,6 +14,7 @@ import { WorkspacePanel } from './WorkspacePanel'
 import styles from './Shell.module.css'
 
 const Panels = lazy(() => import('../panels/Panels'))
+const PluginHost = lazy(() => import('../plugins/Host'))
 const SplitView = lazy(() => import('./SplitView'))
 const EMBEDDED = new URLSearchParams(location.search).has('embed')
 
@@ -27,6 +29,7 @@ export function Shell() {
   const layout = useApp((state) => state.layout)
   const panel = useApp((state) => state.panel)
   const path = usePath()
+  const needsPluginHost = usePlugins((state) => state.activePanel !== null || state.toasts.length > 0)
   const mobilePane = useApp((state) => state.mobilePane)
   const leftCollapsed = useApp((state) => state.leftCollapsed)
   const rightCollapsed = useApp((state) => state.rightCollapsed)
@@ -35,9 +38,16 @@ export function Shell() {
     panesRef.current = element
   }, [])
 
+  const pluginHost = needsPluginHost && (
+    <Suspense fallback={null}>
+      <PluginHost />
+    </Suspense>
+  )
+
   if (EMBEDDED) {
     return (
       <div className={styles.embedded}>
+        {pluginHost}
         <AgentPanel panes={panesRef} />
       </div>
     )
@@ -60,6 +70,7 @@ export function Shell() {
 
   return (
     <div className={styles.shell}>
+      {pluginHost}
       {panel && (
         <Suspense fallback={null}>
           <Panels panel={panel} />

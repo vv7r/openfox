@@ -144,6 +144,7 @@
 }
 
 .link {
+  flex-shrink: 0;
   align-self: flex-end;
   padding: 0;
   border: 0;
@@ -256,4 +257,11 @@
   gap: 4px;
   margin-bottom: 10px;
   font-size: 13px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
 }

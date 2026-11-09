@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { logout, openPanel, toggleColumn } from '../controller'
 import { t } from '../i18n'
+import { PluginMenu } from '../plugins/PluginMenu'
 import { Link, usePath, useRoute } from '../router'
 import { useApp, type PanelId } from '../store/app'
 import styles from './Shell.module.css'
@@ -100,6 +101,9 @@ export function Rail() {
         <Columns2 size={20} />
       </Link>
       <div className={styles.grow} />
+      <PluginMenu
+        classes={{ trigger: styles.railItem!, menu: styles.menu!, item: styles.menuItem!, group: styles.menuGroup! }}
+      />
       <PanelButton
         panel="notifications"
         icon={Bell}

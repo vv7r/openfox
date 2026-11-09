@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { authFetch, getJson, sendJson } from '../api'
 import { reloadProviders } from '../controller'
 import { useLoad } from '../hooks'
+import { loadPlugins, usePlugins } from '../plugins/store'
+import { PluginInstall, PluginSettingsForm } from './PluginSettings'
 import { t } from '../i18n'
 import { useApp } from '../store/app'
 import styles from './Panels.module.css'
@@ -213,55 +215,76 @@ export function SkillsTab() {
   )
 }
 
-interface Plugin {
-  id: string
-  displayName: string
-  description?: string
-  version?: string
-  enabled: boolean
-  removable?: boolean
-}
-
 export function PluginsTab() {
-  const { data, reload } = useLoad(() => getJson<{ plugins: Plugin[] }>('/api/plugins/list'), 'plugins')
+  const plugins = usePlugins((state) => state.plugins)
+  const sections = usePlugins((state) => state.contributions.sections)
   const [confirming, setConfirming] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
   const action = async (id: string, name: string) => {
-    await authFetch(`/api/plugins/${encodeURIComponent(id)}/${name}`, { method: 'POST' })
-    reload()
+    setError(null)
+    const response = await authFetch(`/api/plugins/${encodeURIComponent(id)}/${name}`, { method: 'POST' })
+    if (!response.ok)
+      setError(
+        ((await response.json().catch(() => ({}))) as { error?: string }).error ??
+          t({ en: 'Action failed', fr: 'Action échouée' }),
+      )
+    await loadPlugins()
   }
+
   return (
-    <ul className={styles.list} data-testid="plugins">
-      {data?.plugins.map((plugin) => (
-        <li key={plugin.id}>
-          <input
-            type="checkbox"
-            checked={plugin.enabled}
-            aria-label={plugin.displayName}
-            onChange={() => void action(plugin.id, plugin.enabled ? 'disable' : 'enable')}
-          />
-          <span className={styles.grow}>
-            {plugin.displayName}
-            <span className={styles.muted}>{plugin.version ? ` ${plugin.version}` : ''}</span>
-            {plugin.description && <div className={styles.muted}>{plugin.description}</div>}
-          </span>
-          {plugin.removable &&
-            (confirming === plugin.id ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirming(null)
-                  void action(plugin.id, 'uninstall')
-                }}
-              >
-                {t({ en: 'Confirm', fr: 'Confirmer' })}
+    <div className={styles.stack}>
+      {error && <p className={styles.error}>{error}</p>}
+      <ul className={styles.list} data-testid="plugins">
+        {plugins.map((plugin) => (
+          <li key={plugin.id} className={styles.column}>
+            <div className={styles.row}>
+              <input
+                type="checkbox"
+                checked={plugin.enabled}
+                aria-label={plugin.displayName}
+                onChange={() => void action(plugin.id, plugin.enabled ? 'disable' : 'enable')}
+              />
+              <span className={styles.grow}>
+                {plugin.displayName}
+                <span className={styles.muted}>{plugin.version ? ` ${plugin.version}` : ''}</span>
+                {plugin.description && <div className={styles.muted}>{plugin.description}</div>}
+              </span>
+              {sections.some((section) => section.pluginId === plugin.id) && (
+                <button
+                  type="button"
+                  data-testid={`plugin-configure-${plugin.id}`}
+                  onClick={() => setOpen(open === plugin.id ? null : plugin.id)}
+                >
+                  {t({ en: 'Configure', fr: 'Configurer' })}
+                </button>
+              )}
+              <button type="button" onClick={() => void action(plugin.id, 'reinstall')}>
+                {t({ en: 'Reinstall', fr: 'Réinstaller' })}
               </button>
-            ) : (
-              <button type="button" onClick={() => setConfirming(plugin.id)}>
-                {t({ en: 'Uninstall', fr: 'Désinstaller' })}
-              </button>
-            ))}
-        </li>
-      ))}
-    </ul>
+              {plugin.removable &&
+                (confirming === plugin.id ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirming(null)
+                      void action(plugin.id, 'uninstall')
+                    }}
+                  >
+                    {t({ en: 'Confirm', fr: 'Confirmer' })}
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setConfirming(plugin.id)}>
+                    {t({ en: 'Uninstall', fr: 'Désinstaller' })}
+                  </button>
+                ))}
+            </div>
+            {open === plugin.id && <PluginSettingsForm pluginId={plugin.id} />}
+          </li>
+        ))}
+      </ul>
+      <PluginInstall installedNames={plugins.map((plugin) => plugin.id)} onChange={() => void loadPlugins()} />
+    </div>
   )
 }

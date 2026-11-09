@@ -15,6 +15,7 @@ import { launchWorkflow, pauseGeneration, resumeGeneration, runCommand, sendMess
 import { getJson } from '../api'
 import { t } from '../i18n'
 import { processFile } from '../lib/file-processing'
+import { PluginActions, PluginZone, usePluginContext } from '../plugins/Slots'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { ComposerBar } from './ComposerBar'
@@ -37,6 +38,7 @@ function userHistory(): string[] {
 }
 
 export function Composer() {
+  const pluginContext = usePluginContext()
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
@@ -193,6 +195,11 @@ export function Composer() {
           <QueuedMessages />
         </Suspense>
       )}
+      <PluginZone id="composer.top" context={pluginContext} />
+      <div className={styles.pluginRow}>
+        <PluginActions slot="composer.top" context={pluginContext} />
+        <PluginActions slot="composer.actions" context={pluginContext} />
+      </div>
       {attachError && <div className={styles.attachError}>{attachError}</div>}
       {attachments.length > 0 && (
         <div className={styles.attachments}>

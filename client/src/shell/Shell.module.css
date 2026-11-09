@@ -93,6 +93,9 @@
 }
 
 .menuItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 8px;
   border-radius: 4px;
   outline: none;
@@ -717,6 +720,14 @@
 .favorite {
   flex-shrink: 0;
   color: rgb(var(--color-accent-primary));
+}
+
+.menuGroup {
+  padding: 6px 8px 2px;
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--color-text-muted));
 }
 
 .menuItem[data-danger] {

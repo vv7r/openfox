@@ -1,10 +1,11 @@
-import { memo, useRef, useState } from 'react'
+import { memo, useMemo, useRef, useState } from 'react'
 import { Copy, GitFork, Pencil, RotateCcw } from 'lucide-react'
 import type { Message } from '@shared/types.js'
 import { forkAt, replayMessage } from '../actions'
 import { t } from '../i18n'
 import { copyToClipboard } from '../lib/clipboard'
 import { formatTime } from '../lib/format-stats'
+import { PluginActions, usePluginContext } from '../plugins/Slots'
 import { scanBlocks } from '../markdown/blocks'
 import { useMarkdownHtml } from '../markdown/cache'
 import { useApp } from '../store/app'
@@ -95,6 +96,7 @@ function Assistant({ message }: { message: Message }) {
         return <ToolCard key={element.call.id} call={element.call} />
       })}
       {showStats && message.stats && <Stats stats={message.stats} />}
+      <MessagePluginActions messageId={message.id} />
       {message.partial && <div className={styles.notice}>{t({ en: 'Aborted', fr: 'Interrompu' })}</div>}
       {message.completeReason === 'truncated' && (
         <div className={styles.notice}>
@@ -165,6 +167,12 @@ function Other({ message }: { message: Message }) {
   return <UserMessage message={message} />
 }
 
+function MessagePluginActions({ messageId }: { messageId: string }) {
+  const base = usePluginContext()
+  const context = useMemo(() => ({ ...base, messageId }), [base, messageId])
+  return <PluginActions slot="message.actions" context={context} />
+}
+
 function UserMessage({ message }: { message: Message }) {
   const [draft, setDraft] = useState<string | null>(null)
 
@@ -218,6 +226,7 @@ function UserMessage({ message }: { message: Message }) {
         >
           <GitFork size={13} />
         </button>
+        <MessagePluginActions messageId={message.id} />
       </div>
       <div className={styles.user}>{message.content}</div>
     </div>

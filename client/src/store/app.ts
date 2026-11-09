@@ -62,6 +62,7 @@ export interface AppState {
   display: Record<string, string>
   unreadNotifications: number
   requiresAuth: boolean
+  settingsTab: string | null
 }
 
 export type PanelId = 'tasks' | 'git' | 'processes' | 'mcp' | 'notifications' | 'settings'
@@ -123,6 +124,7 @@ export const useApp = create<AppState>(() => ({
   display: {},
   unreadNotifications: 0,
   requiresAuth: false,
+  settingsTab: null,
   ...SESSION_DEFAULTS,
 }))
 
@@ -272,9 +274,6 @@ export function applyAppMessage(message: ServerMessage): void {
       })
       return
     }
-    case 'plugin.notification':
-      useApp.setState({ unreadNotifications: state.unreadNotifications + 1 })
-      return
     case 'queue.state':
       if (isOpen) useApp.setState({ queue: (message.payload as QueueStatePayload).messages ?? [] })
       return

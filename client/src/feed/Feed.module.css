@@ -740,3 +740,14 @@ button.toolHeader {
   border-color: rgb(var(--color-accent-primary));
   color: rgb(var(--color-accent-primary));
 }
+
+.pluginRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.pluginRow:empty {
+  display: none;
+}

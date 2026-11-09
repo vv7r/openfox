@@ -5,6 +5,7 @@ import { authFetch, getJson, sendJson } from '../api'
 import { subscribeMessages } from '../controller'
 import { useLoad } from '../hooks'
 import { t } from '../i18n'
+import { PluginZone, usePluginContext } from '../plugins/Slots'
 import { useApp } from '../store/app'
 import styles from './Panels.module.css'
 
@@ -149,12 +150,17 @@ function DevServer({ workdir }: { workdir: string }) {
 }
 
 export function ProcessesPanel() {
+  const context = usePluginContext()
   const sessionId = useApp((state) => state.session?.id)
   const workdir = useApp((state) => state.session?.workspace ?? state.session?.workdir)
   return (
     <div className={styles.stack}>
       {sessionId && <BackgroundProcesses sessionId={sessionId} />}
-      {workdir && <DevServer workdir={workdir} />}
+      {workdir && (
+        <PluginZone id="session.sidebar.devserver" context={context}>
+          <DevServer workdir={workdir} />
+        </PluginZone>
+      )}
     </div>
   )
 }

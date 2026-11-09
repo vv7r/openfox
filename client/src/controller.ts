@@ -37,6 +37,7 @@ import {
   setLastEventSeq,
 } from './transport/resume'
 import { Socket } from './transport/ws'
+import { handlePluginMessage, loadPlugins } from './plugins/store'
 
 const LAYOUT_SETTING = 'display.layoutMode'
 const FEED_DISPLAY_KEYS = [
@@ -75,6 +76,7 @@ function onMessage(message: ServerMessage): void {
   if (!acceptSequenced(message, message.sessionId === openSessionId)) return
   applyServerMessage(message)
   applyAppMessage(message)
+  handlePluginMessage(message)
   messageListeners.forEach((listener) => listener(message))
   if (message.type === 'git.status' && message.sessionId === openSessionId) {
     refreshChangedTabs(message.payload as GitStatusPayload)
@@ -193,6 +195,7 @@ async function start(): Promise<void> {
   subscribeRoute(syncRoute)
   syncRoute()
   socket.connect()
+  void loadPlugins().catch(() => {})
   void getJson<{ unreadCount: number }>('/api/notifications').then(({ unreadCount }) =>
     useApp.setState({ unreadNotifications: unreadCount }),
   )
@@ -324,4 +327,13 @@ export function logout(): void {
 
 export function openPanel(panel: PanelId | null): void {
   useApp.setState({ panel })
+}
+
+export const reloadSessionLists = async (): Promise<void> => {
+  const workdir = useApp.getState().session?.workdir
+  if (workdir) await loadAgents(workdir)
+}
+
+export function showSettings(tab?: string): void {
+  useApp.setState({ panel: 'settings', settingsTab: tab ?? null })
 }

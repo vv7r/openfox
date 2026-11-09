@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { Ellipsis, Plus, Star, Upload } from 'lucide-react'
 import type { SessionSummary } from '@shared/types.js'
 import { deleteSession, exportSession, importSession, renameSession, toggleFavorite } from '../actions'
 import { createSession, loadMoreSessions } from '../controller'
 import { t } from '../i18n'
+import { PluginBadges, PluginZone, usePluginContext } from '../plugins/Slots'
 import { Link, useRoute } from '../router'
 import { useApp } from '../store/app'
 import { ProjectTree } from './ProjectTree'
@@ -29,6 +30,10 @@ function SessionRow({ session, projectId, active }: { session: SessionSummary; p
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const title = session.title ?? session.id.slice(0, 8)
+  const badgeContext = useMemo(
+    () => ({ sessionId: session.id, projectId, workdir: session.workspace ?? session.workdir }),
+    [session.id, projectId, session.workspace, session.workdir],
+  )
 
   if (renaming !== null) {
     const commit = () => {
@@ -69,6 +74,7 @@ function SessionRow({ session, projectId, active }: { session: SessionSummary; p
       <Link href={`/p/${projectId}/s/${session.id}`} className={styles.row} data-active={active || undefined}>
         {session.isFavorite && <Star size={12} className={styles.favorite} />}
         <span className={styles.truncate}>{title}</span>
+        <PluginBadges slot="session.row.badges" context={badgeContext} />
         {session.isRunning && <span className={styles.runBadge}>{t({ en: 'Run', fr: 'En cours' })}</span>}
       </Link>
       <DropdownMenu.Root>
@@ -172,10 +178,18 @@ function Sessions({ projectId, sessionId }: { projectId: string; sessionId: stri
 
 export function LeftPanel() {
   const { projectId, sessionId } = useRoute()
+  const context = usePluginContext()
   return (
     <aside className={styles.left} data-pane="project">
-      {sessionId && <ProjectTree />}
-      {projectId ? <Sessions projectId={projectId} sessionId={sessionId} /> : <Projects />}
+      <PluginZone id="sidebar" context={context}>
+        <PluginZone id="sidebar.header" context={context} />
+
+        {sessionId && <ProjectTree />}
+        <PluginZone id="sidebar.sessions_list" context={context}>
+          {projectId ? <Sessions projectId={projectId} sessionId={sessionId} /> : <Projects />}
+        </PluginZone>
+        <PluginZone id="sidebar.footer" context={context} />
+      </PluginZone>
     </aside>
   )
 }

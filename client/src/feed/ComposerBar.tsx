@@ -4,6 +4,9 @@ import * as Popover from '@radix-ui/react-popover'
 import { ChevronDown } from 'lucide-react'
 import { launchWorkflow, resetModel, selectModel, setDangerLevel, switchMode } from '../actions'
 import { t } from '../i18n'
+import { localize } from '../plugins/core'
+import { PluginZone, usePluginContext } from '../plugins/Slots'
+import { usePlugins } from '../plugins/store'
 import { useApp } from '../store/app'
 import styles from './Feed.module.css'
 
@@ -32,6 +35,7 @@ function AgentMenu() {
 
 function DangerToggle() {
   const level = useApp((state) => state.session?.dangerLevel ?? 'normal')
+  const pluginLevels = usePlugins((state) => state.contributions.dangerLevels)
   return (
     <div className={styles.segmented} role="group" aria-label={t({ en: 'Danger level', fr: 'Niveau de risque' })}>
       <button type="button" aria-pressed={level === 'normal'} onClick={() => void setDangerLevel('normal')}>
@@ -45,11 +49,24 @@ function DangerToggle() {
       >
         {t({ en: 'Dangerous', fr: 'Dangereux' })}
       </button>
+      {pluginLevels?.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          title={localize(option.description)}
+          aria-pressed={level === option.id}
+          data-danger
+          onClick={() => void setDangerLevel(option.id)}
+        >
+          {localize(option.label)}
+        </button>
+      ))}
     </div>
   )
 }
 
 function ModelPicker() {
+  const pluginContext = usePluginContext()
   const providers = useApp((state) => state.providers)
   const selected = useApp((state) => state.session?.providerModel ?? state.model)
   const manual = useApp((state) => Boolean(state.session?.providerManual))
@@ -143,6 +160,7 @@ function ModelPicker() {
             {groups.length === 0 && (
               <p className={styles.pickerEmpty}>{t({ en: 'No models match', fr: 'Aucun modèle ne correspond' })}</p>
             )}
+            <PluginZone id="model.picker.footer" context={pluginContext} />
           </div>
         </Popover.Content>
       </Popover.Portal>
