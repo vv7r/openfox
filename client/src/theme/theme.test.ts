@@ -27,3 +27,20 @@ describe('resolveTokens', () => {
     expect(resolveTokens('{oops', true)[accent]).toBe('245 184 61')
   })
 })
+
+describe('resolveTokens with a theme library', () => {
+  const library = {
+    prefs: { darkPreset: 'monokai', lightPreset: 'mine' },
+    users: [{ id: 'mine', name: 'Mine', basePreset: 'light', tokens: { [accent]: '9 9 9' } }],
+  }
+
+  it('uses the chosen dark preset under system', () => {
+    expect(resolveTokens('{"preset":"system"}', true, library)[accent]).toBe('102 217 239')
+  })
+
+  it('resolves a user preset under system, over its base', () => {
+    const tokens = resolveTokens('{"preset":"system"}', false, library)
+    expect(tokens[accent]).toBe('9 9 9')
+    expect(tokens['color-border']).toBe(resolveTokens('{"preset":"light"}', false)['color-border'])
+  })
+})

@@ -4,8 +4,7 @@ import { saveSetting } from '../controller'
 import { useLoad } from '../hooks'
 import { applyLocale, t } from '../i18n'
 import { useApp } from '../store/app'
-import presets from '../theme/presets.json'
-import { applyTheme } from '../theme/theme'
+import { ThemeTab } from './ThemeTab'
 import styles from './Panels.module.css'
 
 type Text = { en: string; fr: string }
@@ -104,37 +103,11 @@ export function InstructionsTab() {
   )
 }
 
-function savedPreset(saved: string): string {
-  try {
-    return saved[0] === '{' ? ((JSON.parse(saved) as { preset?: string }).preset ?? '') : saved
-  } catch {
-    return ''
-  }
-}
-
 function Appearance() {
-  const { ready, value, set } = useSettings(['display.theme', 'display.locale'])
+  const { ready, value, set } = useSettings(['display.locale'])
   if (!ready) return null
   return (
     <>
-      <label className={styles.field}>
-        {t({ en: 'Theme', fr: 'Thème' })}
-        <select
-          className={styles.select}
-          value={savedPreset(value('display.theme'))}
-          onChange={(event) => {
-            const saved = JSON.stringify({ preset: event.target.value })
-            set('display.theme', saved)
-            applyTheme(saved)
-          }}
-        >
-          {presets.presets.map((preset) => (
-            <option key={preset.id} value={preset.id}>
-              {preset.name}
-            </option>
-          ))}
-        </select>
-      </label>
       <label className={styles.field}>
         {t({ en: 'Language', fr: 'Langue' })}
         <select
@@ -157,6 +130,7 @@ function Appearance() {
 export function DisplayTab() {
   return (
     <>
+      <ThemeTab />
       <Appearance />
       <Toggles
         items={[

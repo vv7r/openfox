@@ -26,8 +26,11 @@ async function failure(response: Response): Promise<string | null> {
   return data.error ?? t({ en: 'Action failed', fr: 'Action échouée' })
 }
 
-export function useLibrary<Info, Full>(kind: 'agents' | 'commands', workdir: string | undefined) {
-  const scoped = (path: string) => `/api/${kind}${path}${workdir ? `?workdir=${encodeURIComponent(workdir)}` : ''}`
+export function useLibrary<Info, Full>(kind: 'agents' | 'commands' | 'workflows', workdir: string | undefined) {
+  const scoped = (path: string, scope?: string) => {
+    const query = new URLSearchParams({ ...(workdir ? { workdir } : {}), ...(scope ? { scope } : {}) }).toString()
+    return `/api/${kind}${path}${query ? `?${query}` : ''}`
+  }
   const { data, reload } = useLoad(() => getJson<LibraryLists<Info>>(scoped('')), `${kind}:${workdir ?? ''}`)
 
   const changed = () => {
@@ -44,10 +47,12 @@ export function useLibrary<Info, Full>(kind: 'agents' | 'commands', workdir: str
   return {
     data,
     reload,
-    getItem: (id: string, builtIn: boolean) =>
-      getJson<Full>(builtIn ? `/api/${kind}/defaults/${encodeURIComponent(id)}` : scoped(`/${encodeURIComponent(id)}`)),
+    getItem: (id: string, builtIn: boolean, scope?: string) =>
+      getJson<Full>(scoped(`${builtIn ? '/defaults' : ''}/${encodeURIComponent(id)}`, builtIn ? undefined : scope)),
     create: (item: Full, destination: Destination) => finish(sendJson(scoped(''), 'POST', { ...item, destination })),
-    update: (id: string, item: Full) => finish(sendJson(scoped(`/${encodeURIComponent(id)}`), 'PUT', item)),
-    remove: (id: string) => finish(authFetch(scoped(`/${encodeURIComponent(id)}`), { method: 'DELETE' })),
+    update: (id: string, item: Full, scope?: string) =>
+      finish(sendJson(scoped(`/${encodeURIComponent(id)}`, scope), 'PUT', item)),
+    remove: (id: string, scope?: string) =>
+      finish(authFetch(scoped(`/${encodeURIComponent(id)}`, scope), { method: 'DELETE' })),
   }
 }

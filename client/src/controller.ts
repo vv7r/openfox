@@ -26,7 +26,7 @@ import {
 } from './store/app'
 import { applyServerMessage, resetFeed, setHistory } from './store/feed'
 import { loadTree, refreshChangedTabs, resetWorkspace } from './store/workspace'
-import { applyCachedTheme, applyTheme } from './theme/theme'
+import { SYSTEM_PREFS_KEY, USER_PRESETS_KEY, applyCachedTheme, applyTheme, applyThemeLibrary } from './theme/theme'
 import {
   acceptSequenced,
   beginResume,
@@ -210,8 +210,16 @@ function syncRoute(route: Route = currentRoute()): void {
 }
 
 async function loadSettings(): Promise<void> {
-  const keys = ['display.theme', LAYOUT_SETTING, 'display.locale', ...FEED_DISPLAY_KEYS].join(',')
+  const keys = [
+    'display.theme',
+    USER_PRESETS_KEY,
+    SYSTEM_PREFS_KEY,
+    LAYOUT_SETTING,
+    'display.locale',
+    ...FEED_DISPLAY_KEYS,
+  ].join(',')
   const settings = await getJson<Record<string, string>>(`/api/settings?keys=${keys}`)
+  applyThemeLibrary(settings[USER_PRESETS_KEY], settings[SYSTEM_PREFS_KEY])
   applyTheme(settings['display.theme'])
   const locale = applyLocale(settings['display.locale'])
   useApp.setState({
