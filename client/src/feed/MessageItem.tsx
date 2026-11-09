@@ -3,6 +3,7 @@ import { Copy, GitFork, Pencil, RotateCcw } from 'lucide-react'
 import type { Message } from '@shared/types.js'
 import { forkAt, replayMessage } from '../actions'
 import { t } from '../i18n'
+import { copyToClipboard } from '../lib/clipboard'
 import { formatTime } from '../lib/format-stats'
 import { scanBlocks } from '../markdown/blocks'
 import { useMarkdownHtml } from '../markdown/cache'
@@ -196,7 +197,7 @@ function UserMessage({ message }: { message: Message }) {
         <button
           type="button"
           title={t({ en: 'Copy', fr: 'Copier' })}
-          onClick={() => void navigator.clipboard.writeText(message.content)}
+          onClick={() => void copyToClipboard(message.content)}
         >
           <Copy size={13} />
         </button>

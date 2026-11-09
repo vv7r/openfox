@@ -1,6 +1,7 @@
 import type { ClientMessageType, ServerMessage } from '@shared/protocol.js'
 import { isServerMessage } from '@shared/protocol.js'
 import { readToken } from '../api'
+import { generateUUID } from '../lib/uuid'
 
 export type ConnectionStatus = 'connected' | 'disconnected'
 
@@ -45,7 +46,7 @@ export class Socket {
   /** The request id, or null when the socket is not open. */
   send(type: ClientMessageType, payload: unknown): string | null {
     if (!this.connected) return null
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     this.socket!.send(JSON.stringify({ id, type, payload }))
     return id
   }

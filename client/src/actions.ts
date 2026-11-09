@@ -22,8 +22,29 @@ async function post(path: string, body: unknown = {}): Promise<Response | null> 
   return url ? sendJson(url, 'POST', body) : null
 }
 
-export const switchMode = (mode: string) => put('mode', { mode })
-export const setDangerLevel = (dangerLevel: DangerLevel) => put('danger-level', { dangerLevel })
+interface SessionUpdate {
+  session?: Session
+  messages?: Parameters<typeof setHistory>[1]
+  hiddenCount?: number
+  error?: string
+}
+
+/** Applies the server's answer directly, so the UI does not depend on the socket event. */
+async function putAndApply(path: string, body: unknown): Promise<void> {
+  const url = sessionUrl(path)
+  if (!url) return
+  const response = await sendJson(url, 'PUT', body)
+  const data = (await response.json().catch(() => ({}))) as SessionUpdate
+  if (!response.ok) {
+    useApp.setState({ chatError: data.error ?? `${path} failed (${response.status})` })
+    return
+  }
+  if (data.session) useApp.setState({ session: data.session })
+  if (data.session && data.messages) setHistory(data.session.id, data.messages, data.hiddenCount ?? 0)
+}
+
+export const switchMode = (mode: string) => putAndApply('mode', { mode })
+export const setDangerLevel = (dangerLevel: DangerLevel) => putAndApply('danger-level', { dangerLevel })
 export const stopGeneration = () => post('stop')
 export const continueGeneration = () => post('continue')
 export const confirmPath = (callId: string, approved: boolean, alwaysAllow = false) =>
