@@ -751,3 +751,9 @@ button.toolHeader {
 .pluginRow:empty {
   display: none;
 }
+
+.paramHint {
+  padding: 4px 10px 0;
+  font-size: 12px;
+  color: rgb(var(--color-text-muted));
+}

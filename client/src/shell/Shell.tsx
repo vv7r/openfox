@@ -16,6 +16,7 @@ import styles from './Shell.module.css'
 const Panels = lazy(() => import('../panels/Panels'))
 const PluginHost = lazy(() => import('../plugins/Host'))
 const SplitView = lazy(() => import('./SplitView'))
+const AutoLaunchToast = lazy(() => import('./AutoLaunchToast'))
 const EMBEDDED = new URLSearchParams(location.search).has('embed')
 
 const MOBILE_TABS = [
@@ -28,6 +29,7 @@ export function Shell() {
   const panesRef = useRef<HTMLDivElement | null>(null)
   const layout = useApp((state) => state.layout)
   const panel = useApp((state) => state.panel)
+  const autoLaunched = useApp((state) => state.autoLaunched)
   const path = usePath()
   const needsPluginHost = usePlugins((state) => state.activePanel !== null || state.toasts.length > 0)
   const mobilePane = useApp((state) => state.mobilePane)
@@ -74,6 +76,11 @@ export function Shell() {
       {panel && (
         <Suspense fallback={null}>
           <Panels panel={panel} />
+        </Suspense>
+      )}
+      {autoLaunched && (
+        <Suspense fallback={null}>
+          <AutoLaunchToast launch={autoLaunched} />
         </Suspense>
       )}
       <Header />

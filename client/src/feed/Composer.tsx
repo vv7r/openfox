@@ -1,7 +1,6 @@
 import {
   lazy,
   Suspense,
-  useEffect,
   useRef,
   useState,
   type ClipboardEvent,
@@ -12,22 +11,16 @@ import {
 import { Paperclip, Pause, Play, Send, Square, X } from 'lucide-react'
 import type { Attachment } from '@shared/types.js'
 import { launchWorkflow, pauseGeneration, resumeGeneration, runCommand, sendMessage, stopGeneration } from '../actions'
-import { getJson } from '../api'
 import { t } from '../i18n'
 import { processFile } from '../lib/file-processing'
 import { PluginActions, PluginZone, usePluginContext } from '../plugins/Slots'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { ComposerBar } from './ComposerBar'
-import { activeTrigger, applySuggestion, type Suggestion } from './suggestions'
+import { ParamHint, SuggestionList, useSuggestions } from './useSuggestions'
 import styles from './Feed.module.css'
 
 const QueuedMessages = lazy(() => import('./QueuedMessages'))
-
-interface FileMatch {
-  path: string
-  name: string
-}
 
 function userHistory(): string[] {
   const { ids, byId } = useFeed.getState()
@@ -43,8 +36,6 @@ export function Composer() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [cursor, setCursor] = useState(0)
-  const [selected, setSelected] = useState(0)
-  const [fileMatches, setFileMatches] = useState<FileMatch[]>([])
   const historyIndex = useRef<number | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
@@ -56,36 +47,14 @@ export function Composer() {
   const commands = useApp((state) => state.commands)
   const workflows = useApp((state) => state.workflows)
 
-  const trigger = activeTrigger(text, cursor)
-  const needle = trigger?.query.toLowerCase() ?? ''
-  const suggestions: Suggestion[] =
-    trigger?.kind === 'slash'
-      ? [
-          ...workflows.map((w) => ({ id: w.id, label: `/${w.id}`, detail: w.name, insert: `/${w.id} ` })),
-          ...commands.map((c) => ({ id: c.id, label: `/${c.id}`, detail: c.name, insert: `/${c.id} ` })),
-        ]
-          .filter((s) => s.label.toLowerCase().includes(needle))
-          .slice(0, 8)
-      : trigger?.kind === 'mention'
-        ? fileMatches.slice(0, 8).map((f) => ({ id: f.path, label: f.name, detail: f.path, insert: `@${f.path} ` }))
-        : []
-
-  const mentionQuery = trigger?.kind === 'mention' ? trigger.query : null
-  useEffect(() => {
-    if (mentionQuery === null || !workdir) return
-    let active = true
-    const timer = setTimeout(() => {
-      void getJson<FileMatch[]>(
-        `/api/files?q=${encodeURIComponent(mentionQuery)}&workdir=${encodeURIComponent(workdir)}`,
-      ).then((found) => {
-        if (active) setFileMatches(found)
-      })
-    }, 150)
-    return () => {
-      active = false
-      clearTimeout(timer)
-    }
-  }, [mentionQuery, workdir])
+  const { suggestions, selected, pick, handleKey, missingParams, resetSelection } = useSuggestions({
+    text,
+    setText,
+    cursor,
+    setCursor,
+    input,
+    workdir,
+  })
 
   const addFiles = (files: Iterable<File>) => {
     setAttachError(null)
@@ -125,18 +94,6 @@ export function Composer() {
     send()
   }
 
-  const pick = (suggestion: Suggestion) => {
-    if (!trigger) return
-    const next = applySuggestion(text, trigger, suggestion.insert)
-    setText(next.text)
-    setCursor(next.cursor)
-    setSelected(0)
-    requestAnimationFrame(() => {
-      input.current?.focus()
-      input.current?.setSelectionRange(next.cursor, next.cursor)
-    })
-  }
-
   const browseHistory = (direction: 1 | -1) => {
     const history = userHistory()
     if (history.length === 0) return false
@@ -148,20 +105,7 @@ export function Composer() {
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (suggestions.length > 0) {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault()
-        const delta = event.key === 'ArrowDown' ? 1 : -1
-        setSelected((index) => (index + delta + suggestions.length) % suggestions.length)
-        return
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        event.preventDefault()
-        const suggestion = suggestions[Math.min(selected, suggestions.length - 1)]
-        if (suggestion) pick(suggestion)
-        return
-      }
-    }
+    if (handleKey(event)) return
     if (event.key === 'ArrowUp' && event.currentTarget.selectionStart === 0 && browseHistory(-1)) {
       event.preventDefault()
       return
@@ -217,23 +161,8 @@ export function Composer() {
           ))}
         </div>
       )}
-      {suggestions.length > 0 && (
-        <ul className={styles.suggestions} data-testid="suggestions">
-          {suggestions.map((suggestion, index) => (
-            <li key={suggestion.id}>
-              <button
-                type="button"
-                data-selected={index === selected || undefined}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => pick(suggestion)}
-              >
-                <span>{suggestion.label}</span>
-                <span className={styles.suggestionDetail}>{suggestion.detail}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <SuggestionList suggestions={suggestions} selected={selected} onPick={pick} />
+      <ParamHint count={missingParams} />
       <form className={styles.composer} onSubmit={submit}>
         <input
           ref={filePicker}
@@ -262,7 +191,7 @@ export function Composer() {
           onChange={(event) => {
             setText(event.target.value)
             setCursor(event.target.selectionStart)
-            setSelected(0)
+            resetSelection()
           }}
           onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
           onKeyDown={onKeyDown}

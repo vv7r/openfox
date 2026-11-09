@@ -3,6 +3,8 @@ export interface Suggestion {
   label: string
   detail: string
   insert: string
+  /** Parameters the command expects after its name. */
+  params?: string[]
 }
 
 export interface Trigger {
@@ -27,4 +29,12 @@ export function applySuggestion(text: string, trigger: Trigger, insert: string):
     text: text.slice(0, trigger.start) + insert + text.slice(trigger.end),
     cursor: trigger.start + insert.length,
   }
+}
+
+/** How many of a command's parameters are still missing from `/name a b`. */
+export function remainingParams(text: string, params: string[]): number {
+  const match = /^\/\S+\s+([\s\S]*)$/.exec(text)
+  if (!match) return params.length
+  const filled = match[1]!.trim().split(/\s+/).filter(Boolean).length
+  return Math.max(0, params.length - filled)
 }

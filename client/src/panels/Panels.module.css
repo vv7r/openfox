@@ -21,6 +21,11 @@
   transform: translateX(-50%);
 }
 
+.dialog[data-panel='tasks'] {
+  width: min(1280px, calc(100vw - 16px));
+  height: 88vh;
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -200,26 +205,6 @@
   background: rgb(var(--color-primary));
   font: 12px/1.45 var(--font-mono);
   white-space: pre-wrap;
-}
-
-.board {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-.card {
-  margin-bottom: 8px;
-  padding: 8px;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: 6px;
-  background: rgb(var(--color-primary));
-}
-
-.card p {
-  margin: 0 0 8px;
-  font-size: 13px;
-  overflow-wrap: anywhere;
 }
 
 .tabs {

@@ -52,6 +52,7 @@ export function Rail() {
   const path = usePath()
   const collapsed = useApp((state) => state.leftCollapsed)
   const unread = useApp((state) => state.unreadNotifications)
+  const runningTasks = useApp((state) => state.runningTasks)
   const requiresAuth = useApp((state) => state.requiresAuth)
   const Toggle = collapsed ? PanelLeftOpen : PanelLeftClose
   return (
@@ -75,7 +76,12 @@ export function Rail() {
         </Link>
       )}
       {projectId && (
-        <PanelButton panel="tasks" icon={ListTodo} label={t({ en: 'Project tasks', fr: 'Tâches du projet' })} />
+        <PanelButton
+          panel="tasks"
+          icon={ListTodo}
+          label={t({ en: 'Project tasks', fr: 'Tâches du projet' })}
+          badge={runningTasks}
+        />
       )}
       {sessionId && (
         <PanelButton

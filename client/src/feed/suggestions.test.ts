@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { activeTrigger, applySuggestion } from './suggestions'
+import { activeTrigger, applySuggestion, remainingParams } from './suggestions'
 
 describe('activeTrigger', () => {
   it('finds a slash command only at the very start', () => {
@@ -26,5 +26,14 @@ describe('applySuggestion', () => {
       text: 'see @src/ab.ts  tail',
       cursor: 15,
     })
+  })
+})
+
+describe('remainingParams', () => {
+  it('counts the parameters still to type', () => {
+    expect(remainingParams('/review', ['a', 'b'])).toBe(2)
+    expect(remainingParams('/review ', ['a', 'b'])).toBe(2)
+    expect(remainingParams('/review one', ['a', 'b'])).toBe(1)
+    expect(remainingParams('/review one two three', ['a', 'b'])).toBe(0)
   })
 })

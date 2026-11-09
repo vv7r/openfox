@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
 import { ChevronDown } from 'lucide-react'
@@ -8,6 +8,7 @@ import { localize } from '../plugins/core'
 import { PluginZone, usePluginContext } from '../plugins/Slots'
 import { usePlugins } from '../plugins/store'
 import { useApp } from '../store/app'
+import { ModelList } from './ModelList'
 import styles from './Feed.module.css'
 
 function AgentMenu() {
@@ -72,20 +73,9 @@ function ModelPicker() {
   const manual = useApp((state) => Boolean(state.session?.providerManual))
   const providerId = useApp((state) => state.session?.providerId)
   const activeEffort = useApp((state) => state.session?.providerReasoningEffort)
-  const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const current = providers.find((provider) => provider.id === providerId)
   const efforts = current?.models.find((model) => model.id === selected)?.reasoningEfforts ?? []
-
-  const groups = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return providers
-      .map((provider) => ({
-        provider,
-        models: provider.models.filter((model) => model.id.toLowerCase().includes(needle)),
-      }))
-      .filter((group) => group.models.length > 0)
-  }, [providers, query])
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -95,73 +85,55 @@ function ModelPicker() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={styles.picker} align="end" side="top" sideOffset={6}>
-          <input
-            className={styles.pickerSearch}
-            autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t({ en: 'Search models…', fr: 'Rechercher des modèles…' })}
+          <ModelList
+            selected={selected ?? undefined}
+            onPick={(id, model) => {
+              setOpen(false)
+              void selectModel(id, model)
+            }}
+            before={
+              manual && (
+                <button
+                  type="button"
+                  className={styles.pickerItem}
+                  onClick={() => {
+                    setOpen(false)
+                    void resetModel()
+                  }}
+                >
+                  {t({ en: 'Use the default model', fr: 'Utiliser le modèle par défaut' })}
+                </button>
+              )
+            }
+            after={
+              <>
+                {efforts.length > 0 && current && (
+                  <div className={styles.efforts}>
+                    <span>
+                      {t({
+                        en: 'Effort (changing it resets the LLM cache)',
+                        fr: 'Effort (le changer réinitialise le cache LLM)',
+                      })}
+                    </span>
+                    {efforts.map((effort) => (
+                      <button
+                        key={effort}
+                        type="button"
+                        data-selected={effort === activeEffort || undefined}
+                        onClick={() => {
+                          setOpen(false)
+                          void selectModel(current.id, selected!, effort)
+                        }}
+                      >
+                        {effort}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <PluginZone id="model.picker.footer" context={pluginContext} />
+              </>
+            }
           />
-          <div className={styles.pickerList}>
-            {manual && (
-              <button
-                type="button"
-                className={styles.pickerItem}
-                onClick={() => {
-                  setOpen(false)
-                  void resetModel()
-                }}
-              >
-                {t({ en: 'Use the default model', fr: 'Utiliser le modèle par défaut' })}
-              </button>
-            )}
-            {groups.map(({ provider, models }) => (
-              <div key={provider.id}>
-                <div className={styles.pickerGroup}>{provider.name}</div>
-                {models.map((model) => (
-                  <button
-                    key={model.id}
-                    type="button"
-                    className={styles.pickerItem}
-                    data-selected={model.id === selected || undefined}
-                    onClick={() => {
-                      setOpen(false)
-                      void selectModel(provider.id, model.id)
-                    }}
-                  >
-                    {model.id}
-                  </button>
-                ))}
-              </div>
-            ))}
-            {efforts.length > 0 && current && (
-              <div className={styles.efforts}>
-                <span>
-                  {t({
-                    en: 'Effort (changing it resets the LLM cache)',
-                    fr: 'Effort (le changer réinitialise le cache LLM)',
-                  })}
-                </span>
-                {efforts.map((effort) => (
-                  <button
-                    key={effort}
-                    type="button"
-                    data-selected={effort === activeEffort || undefined}
-                    onClick={() => {
-                      setOpen(false)
-                      void selectModel(current.id, selected!, effort)
-                    }}
-                  >
-                    {effort}
-                  </button>
-                ))}
-              </div>
-            )}
-            {groups.length === 0 && (
-              <p className={styles.pickerEmpty}>{t({ en: 'No models match', fr: 'Aucun modèle ne correspond' })}</p>
-            )}
-            <PluginZone id="model.picker.footer" context={pluginContext} />
-          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

@@ -1,14 +1,18 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { deriveItems } from './items'
 import { FeedRow } from './MessageItem'
 import styles from './Feed.module.css'
 
+const UpNext = lazy(() => import('./UpNext'))
+
 const STICK_THRESHOLD_PX = 64
 
 export function Feed() {
   const ids = useFeed((state) => state.ids)
+  const sessionLoaded = useApp((state) => state.session !== null)
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
   const items = useMemo(() => deriveItems(ids, useFeed.getState().byId), [ids])
@@ -35,6 +39,11 @@ export function Feed() {
 
   return (
     <div ref={scroller} className={styles.scroller} data-testid="chat-scroll-container" onScroll={onScroll}>
+      {ids.length === 0 && sessionLoaded && (
+        <Suspense fallback={null}>
+          <UpNext />
+        </Suspense>
+      )}
       <div className={styles.spacer} style={{ height: totalSize }}>
         {virtualizer.getVirtualItems().map((item) => (
           <div

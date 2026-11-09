@@ -48,7 +48,12 @@ export default function Panels({ panel }: { panel: PanelId }) {
     <Dialog.Root open onOpenChange={(open) => !open && openPanel(null)}>
       <Dialog.Portal>
         <Dialog.Overlay className={styles.overlay} />
-        <Dialog.Content className={styles.dialog} data-testid={`panel-${panel}`} aria-describedby={undefined}>
+        <Dialog.Content
+          className={styles.dialog}
+          data-panel={panel}
+          data-testid={`panel-${panel}`}
+          aria-describedby={undefined}
+        >
           <div className={styles.header}>
             <Dialog.Title className={styles.title}>{t(TITLES[panel])}</Dialog.Title>
             <Dialog.Close className={styles.close} aria-label={t({ en: 'Close', fr: 'Fermer' })}>

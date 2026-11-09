@@ -1,4 +1,4 @@
-import type { ClientMessageType, GitStatusPayload, ServerMessage } from '@shared/protocol.js'
+import type { ClientMessageType, GitStatusPayload, ServerMessage, TasksUpdatePayload } from '@shared/protocol.js'
 import type {
   ContextState,
   Message,
@@ -78,6 +78,11 @@ function onMessage(message: ServerMessage): void {
   applyAppMessage(message)
   handlePluginMessage(message)
   messageListeners.forEach((listener) => listener(message))
+  if (message.type === 'tasks.update') {
+    const { autoLaunched, counts, projectId } = message.payload as TasksUpdatePayload
+    if (autoLaunched) useApp.setState({ autoLaunched })
+    if (projectId === openProjectId) useApp.setState({ runningTasks: counts.running })
+  }
   if (message.type === 'git.status' && message.sessionId === openSessionId) {
     refreshChangedTabs(message.payload as GitStatusPayload)
   }
@@ -135,11 +140,16 @@ async function loadAgents(workdir: string): Promise<void> {
   const data = await getJson<AgentsResponse>(`/api/agents?workdir=${encodeURIComponent(workdir)}`)
   useApp.setState({ agents: flatten(data as unknown as NamedLists).filter((agent) => !(agent as AgentInfo).subagent) })
   const query = `?workdir=${encodeURIComponent(workdir)}`
-  const [commands, workflows] = await Promise.all([
+  const [commands, workflows, skills] = await Promise.all([
     getJson<NamedLists>(`/api/commands${query}`),
     getJson<NamedLists>(`/api/workflows${query}`),
+    getJson<SkillLists>(`/api/skills${query}`),
   ])
-  useApp.setState({ commands: flatten(commands), workflows: flatten(workflows) })
+  useApp.setState({
+    commands: flatten(commands),
+    workflows: flatten(workflows),
+    skills: (skills.items.length > 0 ? skills.items : flatten(skills)).filter((skill) => skill.enabled),
+  })
 }
 
 interface NamedLists {
@@ -148,8 +158,22 @@ interface NamedLists {
   projectItems: NamedItem[]
 }
 
-function flatten(lists: NamedLists): NamedItem[] {
+type SkillItem = NamedItem & { enabled?: boolean }
+
+interface SkillLists {
+  items: SkillItem[]
+  defaults: SkillItem[]
+  userItems: SkillItem[]
+  projectItems: SkillItem[]
+}
+
+function flatten<T extends NamedItem>(lists: { defaults: T[]; userItems: T[]; projectItems: T[] }): T[] {
   return [...lists.defaults, ...lists.userItems, ...lists.projectItems]
+}
+
+async function loadRunningTasks(projectId: string): Promise<void> {
+  const { counts } = await getJson<{ counts: { running: number } }>(`/api/projects/${projectId}/tasks/count`)
+  if (projectId === openProjectId) useApp.setState({ runningTasks: counts.running })
 }
 
 async function loadSessions(projectId: string): Promise<void> {
@@ -162,8 +186,11 @@ async function loadSessions(projectId: string): Promise<void> {
 function syncRoute(route: Route = currentRoute()): void {
   if (route.projectId !== openProjectId) {
     openProjectId = route.projectId
-    useApp.setState({ sessions: [] })
-    if (route.projectId) void loadSessions(route.projectId)
+    useApp.setState({ sessions: [], runningTasks: 0 })
+    if (route.projectId) {
+      void loadSessions(route.projectId)
+      void loadRunningTasks(route.projectId).catch(() => {})
+    }
   }
   if (route.sessionId !== openSessionId) {
     openSessionId = route.sessionId

@@ -56,6 +56,9 @@ export interface AppState {
   providers: ProviderInfo[]
   commands: NamedItem[]
   workflows: NamedItem[]
+  skills: NamedItem[]
+  autoLaunched: TaskAutoLaunch | null
+  runningTasks: number
   sessionsHasMore: boolean
   execution: WorkflowExecution | null
   panel: PanelId | null
@@ -67,11 +70,21 @@ export interface AppState {
 
 export type PanelId = 'tasks' | 'git' | 'processes' | 'mcp' | 'notifications' | 'settings'
 
+export interface TaskAutoLaunch {
+  taskId: string
+  taskTitle: string
+  sessionId: string
+  projectId: string
+}
+
 export interface NamedItem {
   id: string
   name: string
   description?: string
   color?: string
+  /** Workflows declare their parameters, commands only name them. */
+  parameters?: Array<{ id: string }>
+  paramNames?: string[]
 }
 
 export interface AgentInfo {
@@ -119,6 +132,9 @@ export const useApp = create<AppState>(() => ({
   providers: [],
   commands: [],
   workflows: [],
+  skills: [],
+  autoLaunched: null,
+  runningTasks: 0,
   sessionsHasMore: false,
   panel: null,
   display: {},

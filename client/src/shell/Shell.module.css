@@ -939,3 +939,35 @@
     color: rgb(var(--color-accent-primary));
   }
 }
+
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 48px;
+  z-index: 60;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 8px;
+  background: rgb(var(--color-bg-secondary));
+  color: rgb(var(--color-text-primary));
+  font-size: 13px;
+}
+
+.toast button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  background: rgb(var(--color-bg-tertiary));
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}

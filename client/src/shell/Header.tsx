@@ -52,6 +52,7 @@ function ProjectMenu() {
 }
 
 export function Header() {
+  const runningTasks = useApp((state) => state.runningTasks)
   const layout = useApp((state) => state.layout)
   const branch = useApp((state) => state.git?.branch ?? null)
   const running = useApp((state) => state.session?.isRunning === true)
@@ -98,6 +99,7 @@ export function Header() {
             {MOBILE_PANELS.map(({ panel, label }) => (
               <DropdownMenu.Item key={panel} className={styles.menuItem} onSelect={() => openPanel(panel)}>
                 {t(label)}
+                {panel === 'tasks' && runningTasks > 0 && ` (${runningTasks})`}
               </DropdownMenu.Item>
             ))}
           </DropdownMenu.Content>

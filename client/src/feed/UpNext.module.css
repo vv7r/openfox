@@ -1,0 +1,109 @@
+.panel {
+  width: min(560px, calc(100% - 24px));
+  margin: 24px auto;
+  padding: 14px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 8px;
+  background: rgb(var(--color-bg-secondary));
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgb(var(--color-text-muted));
+}
+
+.title {
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.running {
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgb(var(--color-accent-success) / 0.12);
+  color: rgb(var(--color-accent-success));
+  font-size: 11.5px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  background: rgb(var(--color-bg-tertiary));
+  color: rgb(var(--color-text-primary));
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.button[data-primary] {
+  border-color: transparent;
+  background: rgb(var(--color-accent-primary));
+  color: rgb(var(--color-on-accent));
+  font-weight: 600;
+}
+
+.notice {
+  margin: 10px 0 0;
+  padding: 8px;
+  border: 1px solid rgb(var(--color-accent-warning) / 0.4);
+  border-radius: 4px;
+  background: rgb(var(--color-accent-warning) / 0.1);
+  font-size: 12.5px;
+}
+
+.list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 6px;
+}
+
+.text {
+  min-width: 0;
+}
+
+.prompt {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11.5px;
+  color: rgb(var(--color-text-muted));
+}
+
+.error {
+  margin: 10px 0 0;
+  color: rgb(var(--color-accent-error));
+  font-size: 13px;
+}
