@@ -1,9 +1,3 @@
-.page {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
 .scroller {
   flex: 1;
   min-height: 0;

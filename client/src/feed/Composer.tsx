@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { sendJson } from '../api'
 import { t } from '../i18n'
 import styles from './Feed.module.css'
 
@@ -10,11 +11,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
     const content = text.trim()
     if (!content) return
     setText('')
-    void fetch(`/api/sessions/${sessionId}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
+    void sendJson(`/api/sessions/${sessionId}/message`, 'POST', { content })
   }
 
   return (

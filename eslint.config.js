@@ -18,6 +18,7 @@ export default tseslint.config(
       'examples/**',
       '.agent-office/**',
       'web/public/**',
+      'client/node_modules/**',
       'web/tests/**',
       'web/*.mjs',
       'scripts/**/*.mjs',
@@ -48,7 +49,7 @@ export default tseslint.config(
   },
   // Test files have looser rules
   {
-    files: ['src/**/*.test.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx'],
+    files: ['src/**/*.test.ts', 'web/src/**/*.test.ts', 'web/src/**/*.test.tsx', 'client/src/**/*.test.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       'no-useless-assignment': 'off',
@@ -180,7 +181,7 @@ export default tseslint.config(
         elementOverrides: { code: { allowElement: true } },
       })
       .getConfig(),
-    files: ['web/src/**/*.{ts,tsx}'],
+    files: ['web/src/**/*.{ts,tsx}', 'client/src/**/*.{ts,tsx}'],
     name: 'openfox/i18n/jsx-no-literals',
   },
   // i18n gate does not apply to test files (they assert English strings)

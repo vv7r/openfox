@@ -38,3 +38,10 @@ export function flushDeltas(): void {
   if (frame !== null) cancelAnimationFrame(frame)
   run()
 }
+
+/** Forgets everything buffered, when the feed moves to another session. */
+export function clearDeltas(): void {
+  if (frame !== null) cancelAnimationFrame(frame)
+  frame = null
+  pending.clear()
+}

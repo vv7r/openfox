@@ -61,7 +61,7 @@
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
     "typecheck:bench": "tsc --noEmit -p scripts/bench/tsconfig.json",
     "typecheck:perf": "tsc --noEmit -p e2e-playwright/perf/tsconfig.json",
-    "lint": "eslint src/ web/src/",
+    "lint": "eslint src/ web/src/ client/src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --check . --ignore-unknown",
     "format:fix": "prettier --write . --ignore-unknown",

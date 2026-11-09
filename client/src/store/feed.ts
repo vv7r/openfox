@@ -7,7 +7,7 @@ import type {
   SessionStatePayload,
 } from '@shared/protocol.js'
 import type { Message } from '@shared/types.js'
-import { bufferDelta, flushDeltas, setDeltaFlush, type PendingDelta } from './deltaBuffer'
+import { bufferDelta, clearDeltas, flushDeltas, setDeltaFlush, type PendingDelta } from './deltaBuffer'
 
 export interface FeedState {
   sessionId: string | null
@@ -18,6 +18,12 @@ export interface FeedState {
 }
 
 export const useFeed = create<FeedState>(() => ({ sessionId: null, ids: [], byId: {}, loaded: false }))
+
+/** Empties the feed for a session whose history is still loading. */
+export function resetFeed(sessionId: string | null): void {
+  clearDeltas()
+  useFeed.setState({ sessionId, ids: [], byId: {}, loaded: false })
+}
 
 export function setHistory(sessionId: string, messages: Message[]): void {
   useFeed.setState({

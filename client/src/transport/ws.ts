@@ -1,5 +1,6 @@
 import type { ClientMessageType, ServerMessage } from '@shared/protocol.js'
 import { isServerMessage } from '@shared/protocol.js'
+import { readToken } from '../api'
 
 export type ConnectionStatus = 'connected' | 'disconnected'
 
@@ -7,7 +8,7 @@ const MAX_BACKOFF_MS = 15_000
 
 function socketUrl(): string {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const token = localStorage.getItem('openfox_token')
+  const token = readToken()
   return `${protocol}//${location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ''}`
 }
 
@@ -37,8 +38,15 @@ export class Socket {
     }
   }
 
-  send(type: ClientMessageType, payload: unknown): void {
-    if (this.socket?.readyState !== WebSocket.OPEN) return
-    this.socket.send(JSON.stringify({ id: crypto.randomUUID(), type, payload }))
+  get connected(): boolean {
+    return this.socket?.readyState === WebSocket.OPEN
+  }
+
+  /** The request id, or null when the socket is not open. */
+  send(type: ClientMessageType, payload: unknown): string | null {
+    if (!this.connected) return null
+    const id = crypto.randomUUID()
+    this.socket!.send(JSON.stringify({ id, type, payload }))
+    return id
   }
 }
