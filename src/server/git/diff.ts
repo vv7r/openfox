@@ -12,7 +12,41 @@ function toVcsContext(cwd: string, context?: { sessionId?: string; projectId?: s
   }
 }
 
-function nativeGetGitDiffFiles(cwd: string): Promise<GitDiffFile[]> {
+/** A git command's stdout, or null when it failed or could not start. */
+function captureGit(cwd: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    const proc = spawn('git', args, {
+      cwd,
+      env: gitSpawnEnv(),
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    })
+    let stdout = ''
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString()
+    })
+    proc.on('close', (code) => resolve(code === 0 ? stdout : null))
+    proc.on('error', () => resolve(null))
+  })
+}
+
+async function readLineCounts(cwd: string): Promise<Map<string, { additions: number; deletions: number }>> {
+  const counts = new Map<string, { additions: number; deletions: number }>()
+  const stdout = await captureGit(cwd, ['diff', '--ignore-submodules=none', '--numstat', 'HEAD'])
+  for (const line of stdout?.split('\n') ?? []) {
+    // Binary files report "-" for both counts
+    const match = /^(\d+)\t(\d+)\t(.+)$/.exec(line)
+    if (match) counts.set(match[3]!, { additions: Number(match[1]), deletions: Number(match[2]) })
+  }
+  return counts
+}
+
+async function nativeGetGitDiffFiles(cwd: string): Promise<GitDiffFile[]> {
+  const [files, counts] = await Promise.all([listChangedFiles(cwd), readLineCounts(cwd)])
+  return files.map((file) => ({ ...file, ...counts.get(file.path) }))
+}
+
+function listChangedFiles(cwd: string): Promise<GitDiffFile[]> {
   return new Promise((resolve) => {
     const env = gitSpawnEnv()
     const diffProc = spawn('git', ['diff', '--ignore-submodules=none', '--name-status', 'HEAD'], {
@@ -126,28 +160,9 @@ export async function formatGitDiffFiles(
   return files.map((f) => `- ${f.path} (${f.status})`).join('\n')
 }
 
-export function nativeGetGitBranch(cwd: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const proc = spawn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd,
-      env: gitSpawnEnv(),
-      stdio: ['ignore', 'pipe', 'ignore'],
-      windowsHide: true,
-    })
-
-    let stdout = ''
-    proc.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString()
-    })
-    proc.on('close', (code) => {
-      if (code === 0 && stdout.trim()) {
-        resolve(stdout.trim())
-      } else {
-        resolve(null)
-      }
-    })
-    proc.on('error', () => resolve(null))
-  })
+export async function nativeGetGitBranch(cwd: string): Promise<string | null> {
+  const stdout = await captureGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  return stdout?.trim() || null
 }
 
 export async function getGitBranch(

@@ -28,8 +28,12 @@ export function StatusBar() {
             },
             { count: files.length },
           )}
-          <span className={styles.added}>{`+${additions}`}</span>
-          <span className={styles.removed}>{`-${deletions}`}</span>
+          {additions + deletions > 0 && (
+            <>
+              <span className={styles.added}>{`+${additions}`}</span>
+              <span className={styles.removed}>{`-${deletions}`}</span>
+            </>
+          )}
         </span>
       )}
       <div className={styles.grow} />

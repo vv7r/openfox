@@ -15,6 +15,7 @@
     "@tanstack/react-virtual": "^3.14.26",
     "lucide-react": "^0.577.0",
     "marked": "^15.0.12",
+    "monaco-editor": "^0.55.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "shiki": "^4.6.0",

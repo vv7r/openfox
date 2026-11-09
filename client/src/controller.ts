@@ -1,10 +1,11 @@
-import type { ServerMessage } from '@shared/protocol.js'
+import type { GitStatusPayload, ServerMessage } from '@shared/protocol.js'
 import type { Message, Project, Session, SessionSummary } from '@shared/types.js'
 import { TOKEN_KEY, getJson, readToken, sendJson } from './api'
 import { applyCachedLocale, applyLocale } from './i18n'
 import { currentRoute, navigate, subscribeRoute, type Route } from './router'
 import { applyAppMessage, parseLayout, useApp, type LayoutMode } from './store/app'
 import { applyServerMessage, resetFeed, setHistory } from './store/feed'
+import { loadTree, refreshChangedTabs, resetWorkspace } from './store/workspace'
 import { applyCachedTheme, applyTheme } from './theme/theme'
 import {
   acceptSequenced,
@@ -40,6 +41,9 @@ function onMessage(message: ServerMessage): void {
   if (!acceptSequenced(message, message.sessionId === openSessionId)) return
   applyServerMessage(message)
   applyAppMessage(message)
+  if (message.type === 'git.status' && message.sessionId === openSessionId) {
+    refreshChangedTabs(message.payload as GitStatusPayload)
+  }
 }
 
 async function loadSession(sessionId: string): Promise<void> {
@@ -89,8 +93,12 @@ function syncRoute(route: Route = currentRoute()): void {
     openSessionId = route.sessionId
     historyLoaded = false
     resetFeed(route.sessionId)
+    resetWorkspace()
     useApp.setState({ session: null, git: null, mobilePane: 'agent' })
-    if (route.sessionId) void loadSession(route.sessionId)
+    if (route.sessionId) {
+      void loadSession(route.sessionId)
+      void loadTree('')
+    }
   }
 }
 

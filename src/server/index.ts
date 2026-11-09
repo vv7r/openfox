@@ -59,6 +59,7 @@ import { createTerminalRoutes } from './routes/terminals.js'
 import { WorkspaceInUseError } from './utils/errors.js'
 import { createDirectoryRoutes } from './routes/directories.js'
 import { createFileSearchRoutes } from './routes/file-search.js'
+import { createWorkspaceFilesRoutes } from './routes/workspace-files.js'
 import { createAutoUpdateRoutes } from './routes/auto-update.js'
 import { createProviderAuthRoutes } from './routes/provider-auth.js'
 import { devServerManager } from './dev-server/manager.js'
@@ -3448,6 +3449,13 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
 
   app.use('/api/directories', createDirectoryRoutes())
   app.use('/api/files', createFileSearchRoutes())
+  app.use(
+    '/api/sessions/:id/workspace',
+    createWorkspaceFilesRoutes((sessionId) => {
+      const session = sessionManager.getSession(sessionId)
+      return session ? (session.workspace ?? session.workdir) : undefined
+    }),
+  )
 
   // Serve static web UI
   const webDir = resolve(__dirname, '../../web')

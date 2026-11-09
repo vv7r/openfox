@@ -41,12 +41,12 @@ beforeEach(() => {
 })
 
 describe('getGitDiffFiles', () => {
-  it('passes --ignore-submodules=none to both git invocations', async () => {
+  it('passes --ignore-submodules=none to every git invocation', async () => {
     vi.mocked(spawn).mockReturnValue(makeMockProc('') as unknown as ReturnType<typeof spawn>)
     await getGitDiffFiles('/tmp/project')
 
     const calls = vi.mocked(spawn).mock.calls
-    expect(calls.length).toBe(2)
+    expect(calls.length).toBe(3)
     for (const call of calls) {
       const args = call[1] as string[]
       expect(args).toContain('--ignore-submodules=none')
@@ -63,6 +63,19 @@ describe('getGitDiffFiles', () => {
 
     expect(files).toContainEqual({ path: 'libs/mod', status: 'modified', additions: 0, deletions: 0 })
     expect(files).toContainEqual({ path: 'untracked.txt', status: 'added', additions: 0, deletions: 0 })
+  })
+
+  it('fills line counts from git diff --numstat, leaving binary files at zero', async () => {
+    vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
+      const numstat = '26\t9\tsrc/a.ts\n-\t-\timg.png\n'
+      const stdout = args.includes('--numstat') ? numstat : args[0] === 'diff' ? 'M\tsrc/a.ts\nM\timg.png\n' : ''
+      return makeMockProc(stdout) as unknown as ReturnType<typeof spawn>
+    }) as typeof spawn)
+
+    expect(await getGitDiffFiles('/tmp/project')).toEqual([
+      { path: 'src/a.ts', status: 'modified', additions: 26, deletions: 9 },
+      { path: 'img.png', status: 'modified', additions: 0, deletions: 0 },
+    ])
   })
 
   it('delegates to plugin VCS provider when matched', async () => {

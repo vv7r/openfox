@@ -3,6 +3,7 @@ import { createSession } from '../controller'
 import { t } from '../i18n'
 import { Link, useRoute } from '../router'
 import { useApp } from '../store/app'
+import { ProjectTree } from './ProjectTree'
 import styles from './Shell.module.css'
 
 function Projects() {
@@ -50,6 +51,7 @@ export function LeftPanel() {
   const { projectId, sessionId } = useRoute()
   return (
     <aside className={styles.left} data-pane="project">
+      {sessionId && <ProjectTree />}
       {projectId ? <Sessions projectId={projectId} sessionId={sessionId} /> : <Projects />}
     </aside>
   )
