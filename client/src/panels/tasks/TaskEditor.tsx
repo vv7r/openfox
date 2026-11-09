@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import * as Popover from '@radix-ui/react-popover'
-import { ChevronDown, Paperclip, Undo2, X } from 'lucide-react'
+import { Paperclip, Undo2, X } from 'lucide-react'
 import type { Attachment, ProjectTask } from '@shared/types.js'
-import feedStyles from '../../feed/Feed.module.css'
-import { ModelList } from '../../feed/ModelList'
 import { ParamHint, SuggestionList, useSuggestions } from '../../feed/useSuggestions'
 import { t } from '../../i18n'
 import { processFile } from '../../lib/file-processing'
 import { useApp } from '../../store/app'
+import { ModelField } from '../ModelField'
 import panelStyles from '../Panels.module.css'
 import { ScheduleFields } from './ScheduleFields'
 import { saveTask, useBoards } from './boardStore'
@@ -35,43 +33,6 @@ function writeDraft(key: string, prompt: string | null): void {
   } catch {
     // A lost draft only costs what was typed since the last save
   }
-}
-
-interface ModelFieldProps {
-  providerId: string | undefined
-  model: string | undefined
-  onChange: (providerId: string | undefined, model: string | undefined) => void
-}
-
-function ModelField({ providerId, model, onChange }: ModelFieldProps) {
-  const [open, setOpen] = useState(false)
-  const pick = (nextProvider: string | undefined, nextModel: string | undefined) => {
-    setOpen(false)
-    onChange(nextProvider, nextModel)
-  }
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger type="button" className={styles.modelButton} data-testid="task-model">
-        <span className={styles.truncate}>
-          {providerId && model ? model : t({ en: 'Default model', fr: 'Modèle par défaut' })}
-        </span>
-        <ChevronDown size={13} />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content className={feedStyles.picker} align="start" sideOffset={6}>
-          <ModelList
-            selected={model}
-            onPick={pick}
-            before={
-              <button type="button" className={feedStyles.pickerItem} onClick={() => pick(undefined, undefined)}>
-                {t({ en: 'Default model', fr: 'Modèle par défaut' })}
-              </button>
-            }
-          />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  )
 }
 
 interface Props {

@@ -1,0 +1,142 @@
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  background: rgb(var(--color-primary));
+  font-size: 13px;
+}
+
+.row button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.rowBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inlineForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed rgb(var(--color-border));
+  border-radius: 4px;
+}
+
+.inlineForm p {
+  margin: 0;
+}
+
+.colorDot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 3px;
+  font-size: 11px;
+  color: rgb(var(--color-text-muted));
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip[aria-pressed='true'],
+.toolChip[aria-pressed='true'] {
+  border-color: rgb(var(--color-accent-primary) / 0.5) !important;
+  background: rgb(var(--color-accent-primary) / 0.15) !important;
+  color: rgb(var(--color-accent-primary)) !important;
+}
+
+.toolBox {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 150px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+}
+
+.toolChip {
+  padding: 1px 6px !important;
+  font: 11.5px var(--font-mono) !important;
+}
+
+.mcpList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.mcpList code {
+  font: 11.5px var(--font-mono);
+}
+
+.checkItem {
+  position: relative;
+  padding-left: 22px;
+  font-size: 13px;
+}
+
+.tick {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: rgb(var(--color-accent-primary));
+  transform: translateY(-50%);
+}
+
+.twoColumns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.twoColumns > * {
+  margin-bottom: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.danger {
+  border-color: transparent !important;
+  background: rgb(var(--color-accent-error)) !important;
+  color: rgb(var(--color-on-accent)) !important;
+}
+
+@media (min-width: 720px) {
+  .twoColumns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

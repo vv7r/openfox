@@ -111,8 +111,9 @@ interface LibraryLists {
   projectItems: LibraryItem[]
 }
 
-/** Agents and commands edit their prompt; a workflow is one JSON document. */
-export function LibraryTab({ kind }: { kind: 'agents' | 'commands' | 'workflows' }) {
+/** A workflow is one JSON document. */
+export function WorkflowsTab() {
+  const kind = 'workflows'
   const { data, reload } = useLoad(() => getJson<LibraryLists>(`/api/${kind}`), kind)
   const [selected, setSelected] = useState<{ id: string; full: Record<string, unknown>; text: string } | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -127,14 +128,14 @@ export function LibraryTab({ kind }: { kind: 'agents' | 'commands' | 'workflows'
   const open = async (id: string) => {
     setMessage(null)
     const full = await getJson<Record<string, unknown>>(`/api/${kind}/${encodeURIComponent(id)}`)
-    setSelected({ id, full, text: kind === 'workflows' ? JSON.stringify(full, null, 2) : String(full['prompt'] ?? '') })
+    setSelected({ id, full, text: JSON.stringify(full, null, 2) })
   }
 
   const save = async () => {
     if (!selected) return
     let body: unknown
     try {
-      body = kind === 'workflows' ? JSON.parse(selected.text) : { ...selected.full, prompt: selected.text }
+      body = JSON.parse(selected.text)
     } catch {
       setMessage(t({ en: 'Invalid JSON', fr: 'JSON invalide' }))
       return

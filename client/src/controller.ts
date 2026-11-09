@@ -342,6 +342,12 @@ export async function saveSetting(key: string, value: string): Promise<void> {
 
 export const reloadOpenSession = (): Promise<void> => (openSessionId ? loadSession(openSessionId) : Promise.resolve())
 
+/** Agents, commands and workflows changed: refresh what the composer offers. */
+export async function reloadLibrary(): Promise<void> {
+  const workdir = useApp.getState().session?.workdir
+  if (workdir) await loadAgents(workdir)
+}
+
 export async function reloadProviders(): Promise<void> {
   const { providers } = await getJson<{ providers: ProviderInfo[] }>('/api/providers')
   useApp.setState({ providers })
