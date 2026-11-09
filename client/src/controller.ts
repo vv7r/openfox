@@ -15,7 +15,8 @@ import type {
   SessionSummary,
   WorkflowExecution,
 } from '@shared/types.js'
-import type { PendingPathConfirmationPayload, PendingQuestionPayload } from '@shared/protocol.js'
+import type { DevServerStatus } from '@shared/dev-server.js'
+import type { DevServerStatePayload, PendingPathConfirmationPayload, PendingQuestionPayload } from '@shared/protocol.js'
 import { TOKEN_KEY, getJson, readToken, sendJson } from './api'
 import { applyCachedLocale, applyLocale } from './i18n'
 import { currentRoute, navigate, subscribeRoute, type Route } from './router'
@@ -34,6 +35,7 @@ import {
 } from './store/app'
 import { applyServerMessage, resetFeed, setHistory, useFeed } from './store/feed'
 import { isWriteCall } from './feed/agentFiles'
+import { hasActiveMcp } from './shell/railStatus'
 import { leaveWorkspace, loadTree, refreshAfterAgentWrite, refreshChangedTabs } from './store/workspace'
 import { SYSTEM_PREFS_KEY, USER_PRESETS_KEY, applyCachedTheme, applyTheme, applyThemeLibrary } from './theme/theme'
 import {
@@ -97,6 +99,12 @@ function onMessage(message: ServerMessage): void {
     if (autoLaunched) useApp.setState({ autoLaunched })
     if (projectId === openProjectId) useApp.setState({ runningTasks: counts.running })
   }
+  if (message.type === 'mcp.servers.changed' && openSessionId) void loadMcpStatus(openSessionId).catch(() => {})
+  if (message.type === 'devServer.state') {
+    const { workdir, state } = message.payload as DevServerStatePayload
+    const session = useApp.getState().session
+    if (session && workdir === (session.workspace ?? session.workdir)) useApp.setState({ devServerState: state })
+  }
   if (message.type === 'git.status' && message.sessionId === openSessionId) {
     refreshChangedTabs(message.payload as GitStatusPayload)
   }
@@ -132,12 +140,34 @@ async function loadSession(sessionId: string): Promise<void> {
   historyLoaded = true
   socket.send('session.load', { sessionId })
   void loadAgents(data.session.workdir)
+  loadRailStatus(sessionId, data.session.workspace ?? data.session.workdir)
+}
+
+async function loadMcpStatus(sessionId: string): Promise<void> {
+  const [{ servers }, { disabledServers }] = await Promise.all([
+    getJson<{ servers: Array<{ name: string; status: string }> }>('/api/mcp/servers'),
+    getJson<{ disabledServers: string[] }>(`/api/sessions/${sessionId}/mcp/overrides`),
+  ])
+  if (sessionId === openSessionId) useApp.setState({ mcpActive: hasActiveMcp(servers, disabledServers) })
+}
+
+async function loadDevServerState(sessionId: string, workdir: string): Promise<void> {
+  const { state } = await getJson<DevServerStatus>(`/api/dev-server?workdir=${encodeURIComponent(workdir)}`)
+  if (sessionId === openSessionId) useApp.setState({ devServerState: state })
+}
+
+/** Only colours two icons: a failed read leaves them as they were. */
+function loadRailStatus(sessionId: string, workdir: string): void {
+  void loadMcpStatus(sessionId).catch(() => {})
+  void loadDevServerState(sessionId, workdir).catch(() => {})
 }
 
 /** After a reconnect, asks only for the events missed while the socket was down. */
 function resumeOrLoad(): void {
   const sessionId = openSessionId
   if (!sessionId || !historyLoaded) return
+  const session = useApp.getState().session
+  if (session) loadRailStatus(sessionId, session.workspace ?? session.workdir)
   const lastEventSeq = getLastEventSeq(sessionId)
   const requestId = lastEventSeq === undefined ? null : socket.send('session.load', { sessionId, lastEventSeq })
   if (requestId === null) {
@@ -332,6 +362,13 @@ export function toggleColumn(side: 'left' | 'right'): void {
 function foldLeftColumn(): void {
   setColumns({ left: true, right: useApp.getState().rightCollapsed })
 }
+
+export function revealOpenSession(): void {
+  foldLeftColumn()
+  useApp.setState({ mobilePane: 'agent' })
+}
+
+export const unfoldLeftColumn = (): void => setColumns({ left: false, right: useApp.getState().rightCollapsed })
 
 /** The home page lists projects on the left and has no use for the files. */
 export const showHomeColumns = (): void => setColumns({ left: false, right: true })

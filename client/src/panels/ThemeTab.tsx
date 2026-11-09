@@ -6,6 +6,7 @@ import { saveSetting } from '../controller'
 import { useLoad } from '../hooks'
 import { t } from '../i18n'
 import presets from '../theme/presets.json'
+import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME } from '../theme/resolve'
 import {
   SYSTEM_PREFS_KEY,
   USER_PRESETS_KEY,
@@ -214,7 +215,7 @@ function Swatch({
   )
 }
 
-const DEFAULT_PREFS: SystemPrefs = { darkPreset: 'dark', lightPreset: 'light' }
+const DEFAULT_PREFS: SystemPrefs = { darkPreset: DEFAULT_DARK_THEME, lightPreset: DEFAULT_LIGHT_THEME }
 
 export function ThemeTab() {
   const { data } = useLoad(() => getJson<Record<string, string>>(`/api/settings?keys=${SETTINGS}`), 'theme-settings')
@@ -288,7 +289,7 @@ function ThemeGallery({ settings }: { settings: Record<string, string> }) {
   const remove = (preset: UserThemePreset) => saveUsers(users.filter((item) => item.id !== preset.id))
 
   const toggleSystem = () => {
-    const concrete = builtIn.find((item) => item.id === prefs.darkPreset)?.id ?? 'dark'
+    const concrete = builtIn.find((item) => item.id === prefs.darkPreset)?.id ?? DEFAULT_DARK_THEME
     persist(JSON.stringify({ preset: system ? concrete : 'system' }))
   }
 

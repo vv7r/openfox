@@ -13,6 +13,16 @@ describe('TerminalManager', () => {
       expect(session.workdir).toBeDefined()
     })
 
+    it('starts the shell at the requested size', () => {
+      const session = terminalManager.create('/tmp', undefined, { cols: 38, rows: 14 })
+      expect([session.pty.cols, session.pty.rows]).toEqual([38, 14])
+    })
+
+    it('starts at the default size otherwise', () => {
+      const session = terminalManager.create('/tmp')
+      expect([session.pty.cols, session.pty.rows]).toEqual([80, 24])
+    })
+
     it('creates a terminal with custom workdir', () => {
       const session = terminalManager.create('/tmp')
       expect(session.workdir).toBe('/tmp')

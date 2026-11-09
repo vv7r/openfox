@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { authFetch, getJson, sendJson } from '../api'
+import { authFetch, sendJson } from '../api'
 import { reloadProviders } from '../controller'
-import { useLoad } from '../hooks'
 import { loadPlugins, usePlugins } from '../plugins/store'
 import { PluginInstall, PluginSettingsForm } from './PluginSettings'
 import { t } from '../i18n'
@@ -97,42 +96,6 @@ export function ProvidersTab() {
         </div>
       </form>
     </div>
-  )
-}
-
-interface LibraryItem {
-  id: string
-  name: string
-}
-
-interface Skill extends LibraryItem {
-  enabled: boolean
-  description?: string
-}
-
-export function SkillsTab() {
-  const { data, reload } = useLoad(() => getJson<{ items: Skill[] }>('/api/skills'), 'skills')
-  const toggle = async (id: string) => {
-    await authFetch(`/api/skills/${encodeURIComponent(id)}/toggle`, { method: 'POST' })
-    reload()
-  }
-  return (
-    <ul className={styles.list}>
-      {data?.items.map((skill) => (
-        <li key={skill.id}>
-          <input
-            type="checkbox"
-            checked={skill.enabled}
-            aria-label={skill.name}
-            onChange={() => void toggle(skill.id)}
-          />
-          <span className={styles.grow}>
-            {skill.name}
-            {skill.description && <div className={styles.muted}>{skill.description}</div>}
-          </span>
-        </li>
-      ))}
-    </ul>
   )
 }
 

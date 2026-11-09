@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { authFetch, getJson, sendJson } from '../api'
 import { useLoad, useServerEvents } from '../hooks'
 import { t } from '../i18n'
+import { hasActiveMcp } from '../shell/railStatus'
 import { useApp } from '../store/app'
 import { emptyMcpForm, mcpBody, mcpFormFrom, validateMcpForm, type McpForm, type McpServer } from './mcp/mcpForm'
 import libraryStyles from './library/Library.module.css'
@@ -430,6 +431,14 @@ export function McpPanel() {
   const [error, setError] = useState<string | null>(null)
   useServerEvents(['mcp.servers.changed'], useCallback(servers.reload, [servers.reload]))
   const disabled = overrides.data?.disabledServers ?? []
+
+  // The rail's indicator follows what is changed here
+  const loadedServers = servers.data?.servers
+  const loadedOverrides = overrides.data?.disabledServers
+  useEffect(() => {
+    if (sessionId && loadedServers && loadedOverrides)
+      useApp.setState({ mcpActive: hasActiveMcp(loadedServers, loadedOverrides) })
+  }, [sessionId, loadedServers, loadedOverrides])
 
   const toggleForSession = async (name: string) => {
     const disabledServers = disabled.includes(name) ? disabled.filter((server) => server !== name) : [...disabled, name]

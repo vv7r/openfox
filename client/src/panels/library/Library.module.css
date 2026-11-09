@@ -140,3 +140,21 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Repeated to outrank the panel's general button style */
+.dropZone.dropZone.dropZone {
+  width: 100%;
+  padding: 18px 12px;
+  border: 1px dashed rgb(var(--color-border));
+  border-radius: 4px;
+  background: none;
+  color: rgb(var(--color-text-secondary));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dropZone.dropZone.dropZone:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

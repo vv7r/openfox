@@ -2,20 +2,20 @@
 @import '@fontsource/jetbrains-mono/400.css';
 
 :root {
-  --color-primary: 10 11 14;
-  --color-secondary: 15 17 21;
-  --color-bg-secondary: 21 24 29;
-  --color-bg-tertiary: 31 35 42;
-  --color-text-primary: 232 234 237;
-  --color-text-secondary: 165 172 182;
-  --color-text-muted: 122 129 140;
-  --color-accent-primary: 245 184 61;
-  --color-on-accent: 18 16 12;
-  --color-border: 40 44 52;
-  --color-accent-success: 92 214 134;
-  --color-accent-error: 248 96 96;
-  --color-text-code: 240 200 130;
-  --color-text-link: 245 184 61;
+  --color-primary: 46 52 64;
+  --color-secondary: 41 46 57;
+  --color-bg-secondary: 59 66 82;
+  --color-bg-tertiary: 67 76 94;
+  --color-text-primary: 216 222 233;
+  --color-text-secondary: 194 202 216;
+  --color-text-muted: 138 149 171;
+  --color-accent-primary: 136 192 208;
+  --color-on-accent: 16 16 20;
+  --color-border: 67 76 94;
+  --color-accent-success: 163 190 140;
+  --color-accent-error: 213 119 128;
+  --color-text-code: 143 188 187;
+  --color-text-link: 136 192 208;
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }

@@ -1,4 +1,4 @@
-import { ChevronDown, GitBranch, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Bell, ChevronDown, GitBranch, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { openPanel, toggleColumn } from '../controller'
 import { t } from '../i18n'
@@ -53,6 +53,8 @@ export function Header() {
   const runningTasks = useApp((state) => state.runningTasks)
   const branch = useApp((state) => state.git?.branch ?? null)
   const rightCollapsed = useApp((state) => state.rightCollapsed)
+  const unread = useApp((state) => state.unreadNotifications)
+  const notificationsOpen = useApp((state) => state.panel === 'notifications')
   const pluginContext = usePluginContext()
   const RightToggle = rightCollapsed ? PanelRightOpen : PanelRightClose
 
@@ -98,6 +100,18 @@ export function Header() {
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      <button
+        type="button"
+        className={styles.iconButton}
+        data-testid="header-notifications"
+        data-active={notificationsOpen || undefined}
+        title={t({ en: 'Notifications', fr: 'Notifications' })}
+        aria-label={t({ en: 'Notifications', fr: 'Notifications' })}
+        onClick={() => openPanel('notifications')}
+      >
+        <Bell size={18} />
+        {unread > 0 && <span className={styles.railBadge}>{unread > 99 ? '99+' : unread}</span>}
+      </button>
       <button
         type="button"
         className={styles.iconButton}

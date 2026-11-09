@@ -1,6 +1,5 @@
 import type { ComponentType } from 'react'
 import {
-  Bell,
   Cpu,
   GitBranch,
   House,
@@ -12,23 +11,34 @@ import {
   Plug,
   Settings,
 } from 'lucide-react'
-import { logout, openPanel, showHomeColumns, toggleColumn } from '../controller'
+import type { DevServerState } from '@shared/dev-server.js'
+import { logout, openPanel, showHomeColumns, toggleColumn, unfoldLeftColumn } from '../controller'
 import { t } from '../i18n'
 import { PluginMenu } from '../plugins/PluginMenu'
 import { Link, usePath, useRoute } from '../router'
 import { useApp, type PanelId } from '../store/app'
+import { devServerTone, type RailTone } from './railStatus'
 import styles from './Shell.module.css'
+
+const DEV_SERVER_LABELS: Record<DevServerState, { en: string; fr: string }> = {
+  off: { en: 'Processes and dev server', fr: 'Processus et serveur de dev' },
+  running: { en: 'Dev server running', fr: 'Serveur de dev en marche' },
+  warning: { en: 'Dev server: warning', fr: 'Serveur de dev : avertissement' },
+  error: { en: 'Dev server: error', fr: 'Serveur de dev : erreur' },
+}
 
 function PanelButton({
   panel,
   icon: Icon,
   label,
   badge = 0,
+  tone,
 }: {
   panel: PanelId
   icon: ComponentType<{ size?: number }>
   label: string
   badge?: number
+  tone?: RailTone | undefined
 }) {
   const active = useApp((state) => state.panel === panel)
   return (
@@ -42,6 +52,7 @@ function PanelButton({
     >
       <Icon size={20} />
       {badge > 0 && <span className={styles.railBadge}>{badge > 99 ? '99+' : badge}</span>}
+      {tone && <span className={styles.railDot} data-tone={tone} data-testid={`rail-dot-${panel}`} />}
     </button>
   )
 }
@@ -50,9 +61,10 @@ export function Rail() {
   const { projectId, sessionId } = useRoute()
   const path = usePath()
   const collapsed = useApp((state) => state.leftCollapsed)
-  const unread = useApp((state) => state.unreadNotifications)
   const runningTasks = useApp((state) => state.runningTasks)
   const requiresAuth = useApp((state) => state.requiresAuth)
+  const mcpActive = useApp((state) => state.mcpActive)
+  const devServerState = useApp((state) => state.devServerState)
   const Toggle = collapsed ? PanelLeftOpen : PanelLeftClose
   return (
     <nav className={styles.rail}>
@@ -71,7 +83,13 @@ export function Rail() {
           href={`/p/${projectId}`}
           className={styles.railItem}
           data-active={path !== '/split-view' || undefined}
+          data-testid="rail-sessions"
           title={t({ en: 'Sessions', fr: 'Sessions' })}
+          onClick={(event) => {
+            // Shows the list without leaving the open session
+            event.preventDefault()
+            unfoldLeftColumn()
+          }}
         >
           <MessagesSquare size={20} />
         </Link>
@@ -95,19 +113,25 @@ export function Rail() {
         <PanelButton
           panel="processes"
           icon={Cpu}
-          label={t({ en: 'Processes and dev server', fr: 'Processus et serveur de dev' })}
+          label={t(DEV_SERVER_LABELS[devServerState])}
+          tone={devServerTone(devServerState)}
         />
       )}
-      {sessionId && <PanelButton panel="mcp" icon={Plug} label={t({ en: 'MCP servers', fr: 'Serveurs MCP' })} />}
+      {sessionId && (
+        <PanelButton
+          panel="mcp"
+          icon={Plug}
+          label={
+            mcpActive
+              ? t({ en: 'MCP servers: active in this session', fr: 'Serveurs MCP : actifs dans cette session' })
+              : t({ en: 'MCP servers', fr: 'Serveurs MCP' })
+          }
+          tone={mcpActive ? 'success' : undefined}
+        />
+      )}
       <div className={styles.grow} />
       <PluginMenu
         classes={{ trigger: styles.railItem!, menu: styles.menu!, item: styles.menuItem!, group: styles.menuGroup! }}
-      />
-      <PanelButton
-        panel="notifications"
-        icon={Bell}
-        label={t({ en: 'Notifications', fr: 'Notifications' })}
-        badge={unread}
       />
       <PanelButton panel="settings" icon={Settings} label={t({ en: 'Settings', fr: 'Paramètres' })} />
       {requiresAuth && (

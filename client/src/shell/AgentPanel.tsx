@@ -9,10 +9,10 @@ import { useApp } from '../store/app'
 import { ChatError } from './ChatError'
 import { Splitter } from './Splitter'
 import { WorkflowBar } from './WorkflowBar'
-import { Home } from './Home'
 import styles from './Shell.module.css'
 
 const AgentDialogs = lazy(() => import('./AgentDialogs'))
+const Home = lazy(() => import('./Home').then((module) => ({ default: module.Home })))
 
 export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> }) {
   const { sessionId } = useRoute()
@@ -60,7 +60,9 @@ export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> 
           <PluginZone id="session.footer" context={pluginContext} />
         </>
       ) : (
-        <Home />
+        <Suspense fallback={null}>
+          <Home />
+        </Suspense>
       )}
     </section>
   )

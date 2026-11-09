@@ -28,6 +28,7 @@ import type {
   MessageStats,
 } from '@shared/types.js'
 import type { Locale } from '@shared/i18n/index.js'
+import type { DevServerState } from '@shared/dev-server.js'
 
 export type AppDialog = 'update' | 'changelog' | 'new-project'
 
@@ -76,6 +77,9 @@ export interface AppState {
   unreadNotifications: number
   requiresAuth: boolean
   settingsTab: string | null
+  /** At least one connected MCP server is on for the open session. */
+  mcpActive: boolean
+  devServerState: DevServerState
   /** The item a settings tab should open straight into. */
   settingsEdit: { id: string; scope?: WorkflowScope } | null
 }
@@ -139,6 +143,8 @@ export const SESSION_DEFAULTS = {
   chatError: null,
   execution: null,
   agentDialog: null,
+  mcpActive: false,
+  devServerState: 'off',
 } satisfies Partial<AppState>
 
 export const useApp = create<AppState>(() => ({

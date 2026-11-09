@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import * as Dialog from '@radix-ui/react-dialog'
 import type { MetadataEntry } from '@shared/types.js'
 import { Plus, Trash2, X } from 'lucide-react'
 import { saveCriteria } from '../actions'
 import { t } from '../i18n'
+import panelStyles from '../panels/Panels.module.css'
 import styles from './Session.module.css'
 
 const STATUS_CYCLE: Record<string, string> = {
@@ -17,15 +19,110 @@ function nextId(entries: MetadataEntry[]): string {
   return String(Math.max(-1, ...numbers) + 1)
 }
 
+const stepNumber = (entry: MetadataEntry, index: number): string =>
+  /^\d{1,2}$/.test(entry.id) ? entry.id : String(index + 1)
+
 function stepContent(entry: MetadataEntry, index: number): string {
   if (entry.status === 'passed') return '✓'
   if (entry.status === 'failed') return '✗'
-  return /^\d{1,2}$/.test(entry.id) ? entry.id : String(index + 1)
+  return stepNumber(entry, index)
+}
+
+function statusLabel(status: string): string {
+  if (status === 'passed') return t({ en: 'Validated', fr: 'Validé' })
+  if (status === 'failed') return t({ en: 'Failed', fr: 'Échoué' })
+  if (status === 'completed') return t({ en: 'Done, awaiting verification', fr: 'Terminé, en attente de vérification' })
+  return t({ en: 'Pending', fr: 'En attente' })
+}
+
+function CriterionDialog({
+  entry,
+  number,
+  onSave,
+  close,
+}: {
+  entry: MetadataEntry
+  number: string
+  onSave: (description: string) => void
+  close: () => void
+}) {
+  const [text, setText] = useState<string | null>(null)
+  const trimmed = text?.trim()
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && close()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className={panelStyles.overlay} />
+        <Dialog.Content
+          className={panelStyles.dialog}
+          data-size="medium"
+          data-testid="criterion-dialog"
+          aria-describedby={undefined}
+        >
+          <div className={panelStyles.header}>
+            <Dialog.Title
+              className={panelStyles.title}
+            >{`${t({ en: 'Criterion', fr: 'Critère' })} ${number}`}</Dialog.Title>
+            <Dialog.Close className={panelStyles.close} aria-label={t({ en: 'Close', fr: 'Fermer' })}>
+              <X size={16} />
+            </Dialog.Close>
+          </div>
+          <div className={panelStyles.body}>
+            <div className={panelStyles.stack}>
+              <span className={styles.criterionStatus} data-status={entry.status} data-testid="criterion-status">
+                {statusLabel(entry.status)}
+              </span>
+              {text === null ? (
+                <p className={styles.criterionText} data-testid="criterion-full">
+                  {entry.description}
+                </p>
+              ) : (
+                <textarea
+                  className={panelStyles.textarea}
+                  data-testid="criterion-edit"
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                />
+              )}
+              <div className={panelStyles.row}>
+                <span className={panelStyles.grow} />
+                {text === null ? (
+                  <button type="button" data-testid="criterion-modify" onClick={() => setText(entry.description)}>
+                    {t({ en: 'Edit', fr: 'Modifier' })}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => setText(null)}>
+                      {t({ en: 'Cancel', fr: 'Annuler' })}
+                    </button>
+                    <button
+                      type="button"
+                      className={panelStyles.primary}
+                      data-testid="criterion-save"
+                      disabled={!trimmed}
+                      onClick={() => {
+                        if (trimmed) onSave(trimmed)
+                        setText(null)
+                      }}
+                    >
+                      {t({ en: 'Save', fr: 'Enregistrer' })}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
 }
 
 export function Criteria({ entries }: { entries: MetadataEntry[] }) {
   const [draft, setDraft] = useState('')
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const openIndex = entries.findIndex((entry) => entry.id === openId)
+  const opened = entries[openIndex]
 
   const add = () => {
     const description = draft.trim()
@@ -34,15 +131,19 @@ export function Criteria({ entries }: { entries: MetadataEntry[] }) {
     setDraft('')
   }
 
-  const commitEdit = () => {
-    if (!editing) return
-    const description = editing.text.trim()
-    if (description) saveCriteria(entries.map((entry) => (entry.id === editing.id ? { ...entry, description } : entry)))
-    setEditing(null)
-  }
-
   return (
     <div data-testid="criteria">
+      {opened && (
+        <CriterionDialog
+          key={opened.id}
+          entry={opened}
+          number={stepNumber(opened, openIndex)}
+          onSave={(description) =>
+            saveCriteria(entries.map((entry) => (entry.id === opened.id ? { ...entry, description } : entry)))
+          }
+          close={() => setOpenId(null)}
+        />
+      )}
       <ol className={styles.timeline}>
         {entries.map((entry, index) => (
           <li key={entry.id}>
@@ -62,27 +163,14 @@ export function Criteria({ entries }: { entries: MetadataEntry[] }) {
             >
               {stepContent(entry, index)}
             </button>
-            {editing?.id === entry.id ? (
-              <input
-                className={styles.input}
-                autoFocus
-                value={editing.text}
-                onChange={(event) => setEditing({ id: entry.id, text: event.target.value })}
-                onBlur={commitEdit}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') commitEdit()
-                  if (event.key === 'Escape') setEditing(null)
-                }}
-              />
-            ) : (
-              <button
-                type="button"
-                className={styles.stepText}
-                onClick={() => setEditing({ id: entry.id, text: entry.description })}
-              >
-                {entry.description}
-              </button>
-            )}
+            <button
+              type="button"
+              className={styles.stepText}
+              data-testid="criterion-text"
+              onClick={() => setOpenId(entry.id)}
+            >
+              {entry.description}
+            </button>
             <button
               type="button"
               className={styles.ghost}

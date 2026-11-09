@@ -15,7 +15,12 @@ interface TerminalMessage {
 interface TerminalSubscription {
   ws: WebSocket
   sessionId: string
+  /** Until the history is sent: anything printed meanwhile is part of it. */
+  replaying: boolean
 }
+
+// Lets a client that subscribes before its view exists mount that view first
+const REPLAY_DELAY_MS = 100
 
 const subscriptions = new Set<TerminalSubscription>()
 
@@ -28,7 +33,7 @@ function registerOutputHandler(): void {
 
   terminalManager.onOutput((output) => {
     const subs = Array.from(subscriptions).filter(
-      (s) => s.sessionId === output.sessionId && s.ws.readyState === WebSocket.OPEN,
+      (s) => s.sessionId === output.sessionId && !s.replaying && s.ws.readyState === WebSocket.OPEN,
     )
     for (const sub of subs) {
       sub.ws.send(
@@ -69,26 +74,25 @@ export function handleTerminalMessage(ws: WebSocket, message: TerminalMessage): 
   switch (message.type) {
     case 'terminal.subscribe': {
       if (message.payload.sessionId) {
-        const exists = Array.from(subscriptions).some(
-          (sub) => sub.ws === ws && sub.sessionId === message.payload.sessionId,
-        )
-        if (!exists) {
-          subscriptions.add({ ws, sessionId: message.payload.sessionId })
+        const sessionId = message.payload.sessionId
+        let subscription = Array.from(subscriptions).find((sub) => sub.ws === ws && sub.sessionId === sessionId)
+        if (!subscription) {
+          subscription = { ws, sessionId, replaying: false }
+          subscriptions.add(subscription)
         }
         registerOutputHandler()
         registerExitHandler()
 
-        const sessionId = message.payload.sessionId
-        const history = terminalManager.getOutputHistory(sessionId)
-        if (history) {
+        if (!subscription.replaying) {
+          const current = subscription
+          current.replaying = true
           setTimeout(() => {
-            ws.send(
-              JSON.stringify({
-                type: 'terminal.output',
-                payload: { sessionId, data: history },
-              }),
-            )
-          }, 100)
+            current.replaying = false
+            const history = terminalManager.getOutputHistory(sessionId)
+            if (history && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'terminal.output', payload: { sessionId, data: history } }))
+            }
+          }, REPLAY_DELAY_MS)
         }
       }
       break
@@ -132,7 +136,7 @@ export function handleTerminalMessage(ws: WebSocket, message: TerminalMessage): 
 }
 
 export function subscribeToTerminal(ws: WebSocket, sessionId: string): void {
-  subscriptions.add({ ws, sessionId })
+  subscriptions.add({ ws, sessionId, replaying: false })
 }
 
 export function unsubscribeFromTerminal(ws: WebSocket, sessionId: string): void {

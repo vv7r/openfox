@@ -3,7 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { Ellipsis, Plus, Star, Upload } from 'lucide-react'
 import type { SessionSummary } from '@shared/types.js'
 import { deleteSession, exportSession, importSession, renameSession, toggleFavorite } from '../actions'
-import { createSession, loadMoreSessions } from '../controller'
+import { createSession, loadMoreSessions, revealOpenSession } from '../controller'
 import { t } from '../i18n'
 import { PluginBadges, PluginZone, usePluginContext } from '../plugins/Slots'
 import { Link, useRoute } from '../router'
@@ -80,7 +80,13 @@ function SessionRow({ session, projectId, active }: { session: SessionSummary; p
 
   return (
     <div className={styles.sessionRow}>
-      <Link href={`/p/${projectId}/s/${session.id}`} className={styles.row} data-active={active || undefined}>
+      <Link
+        href={`/p/${projectId}/s/${session.id}`}
+        className={styles.row}
+        data-active={active || undefined}
+        // The route does not change for the open session, so nothing else would reveal it
+        onClick={active ? revealOpenSession : undefined}
+      >
         {session.isFavorite && <Star size={12} className={styles.favorite} />}
         <span className={styles.truncate}>{title}</span>
         <PluginBadges slot="session.row.badges" context={badgeContext} />

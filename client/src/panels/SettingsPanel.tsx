@@ -7,11 +7,12 @@ import { PluginZone, usePluginContext } from '../plugins/Slots'
 import { usePlugins } from '../plugins/store'
 import { useApp } from '../store/app'
 import { AdvancedTab, DisplayTab, InstructionsTab, ToolsTab } from './SettingsForms'
-import { PluginsTab, ProvidersTab, SkillsTab } from './SettingsLists'
+import { PluginsTab, ProvidersTab } from './SettingsLists'
 import { NotificationSettingsTab } from './NotificationSettingsTab'
 import { WorkflowsTab } from './workflows/WorkflowsTab'
 import { AgentsTab } from './library/AgentsTab'
 import { CommandsTab } from './library/CommandsTab'
+import { SkillsTab } from './library/SkillsTab'
 import styles from './Panels.module.css'
 
 const TABS = [

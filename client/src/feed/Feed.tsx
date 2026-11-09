@@ -1,5 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { ArrowDown } from 'lucide-react'
+import { t } from '../i18n'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { deriveItems } from './items'
@@ -16,6 +18,7 @@ export function Feed() {
   const sessionLoaded = useApp((state) => state.session !== null)
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
+  const [scrolledUp, setScrolledUp] = useState(false)
   const items = useMemo(() => deriveItems(ids, useFeed.getState().byId), [ids])
 
   const virtualizer = useVirtualizer({
@@ -29,8 +32,18 @@ export function Feed() {
 
   const onScroll = useCallback(() => {
     const element = scroller.current
-    if (element) stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
+    if (!element) return
+    stuck.current = element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD_PX
+    setScrolledUp(!stuck.current)
   }, [])
+
+  const backToLive = () => {
+    const element = scroller.current
+    if (!element) return
+    stuck.current = true
+    setScrolledUp(false)
+    element.scrollTop = element.scrollHeight
+  }
 
   useEffect(
     () =>
@@ -48,26 +61,34 @@ export function Feed() {
   }, [totalSize, items.length])
 
   return (
-    <div ref={scroller} className={styles.scroller} data-testid="chat-scroll-container" onScroll={onScroll}>
-      {ids.length === 0 && sessionLoaded && (
-        <Suspense fallback={null}>
-          <UpNext />
-        </Suspense>
-      )}
-      <div className={styles.spacer} style={{ height: totalSize }}>
-        {virtualizer.getVirtualItems().map((item) => (
-          <div
-            key={item.key}
-            ref={virtualizer.measureElement}
-            className={styles.item}
-            data-index={item.index}
-            data-item-index={item.index}
-            style={{ transform: `translateY(${item.start}px)` }}
-          >
-            <FeedRow item={items[item.index]!} />
-          </div>
-        ))}
+    <div className={styles.feed}>
+      <div ref={scroller} className={styles.scroller} data-testid="chat-scroll-container" onScroll={onScroll}>
+        {ids.length === 0 && sessionLoaded && (
+          <Suspense fallback={null}>
+            <UpNext />
+          </Suspense>
+        )}
+        <div className={styles.spacer} style={{ height: totalSize }}>
+          {virtualizer.getVirtualItems().map((item) => (
+            <div
+              key={item.key}
+              ref={virtualizer.measureElement}
+              className={styles.item}
+              data-index={item.index}
+              data-item-index={item.index}
+              style={{ transform: `translateY(${item.start}px)` }}
+            >
+              <FeedRow item={items[item.index]!} />
+            </div>
+          ))}
+        </div>
       </div>
+      {scrolledUp && (
+        <button type="button" className={styles.toBottom} data-testid="feed-to-bottom" onClick={backToLive}>
+          <ArrowDown size={14} />
+          {t({ en: 'Back to bottom', fr: 'Revenir en bas' })}
+        </button>
+      )}
     </div>
   )
 }

@@ -21,6 +21,13 @@ async function killPty(ptyProcess: pty.IPty): Promise<void> {
   ptyProcess.kill()
 }
 
+export interface TerminalSize {
+  cols: number
+  rows: number
+}
+
+const DEFAULT_SIZE: TerminalSize = { cols: 80, rows: 24 }
+
 export interface TerminalSession {
   id: string
   pty: pty.IPty
@@ -60,15 +67,15 @@ class TerminalManager {
     return os.homedir()
   }
 
-  create(workdir?: string, projectId?: string): TerminalSession {
+  create(workdir?: string, projectId?: string, size?: TerminalSize): TerminalSession {
     const id = this.generateId()
     const shell = this.getShell()
     const cwd = this.resolveWorkdir(workdir)
 
     const ptyProcess = pty.spawn(shell, [], {
       name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
+      cols: size?.cols ?? DEFAULT_SIZE.cols,
+      rows: size?.rows ?? DEFAULT_SIZE.rows,
       cwd,
       env: process.env as { [key: string]: string },
     })

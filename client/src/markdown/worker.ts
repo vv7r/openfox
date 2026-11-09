@@ -3,11 +3,13 @@ import { bundledLanguages, createHighlighter, type BundledLanguage, type Highlig
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import { fenceLanguage, renderMarkdown } from './render'
 
-const THEME = 'github-dark'
+const THEMES = { dark: 'github-dark', light: 'github-light' }
+/** GitHub's comment grey and orange are too faint on the tinted code blocks of some themes. */
+const READABLE_COLORS = { 'github-dark': { '#6a737d': '#9aa4b0' }, 'github-light': { '#e36209': '#b34a00' } }
 let highlighter: Promise<Highlighter> | null = null
 
 function getHighlighter(): Promise<Highlighter> {
-  highlighter ??= createHighlighter({ themes: [THEME], langs: [], engine: createJavaScriptRegexEngine() })
+  highlighter ??= createHighlighter({ themes: Object.values(THEMES), langs: [], engine: createJavaScriptRegexEngine() })
   return highlighter
 }
 
@@ -28,7 +30,9 @@ self.onmessage = async (event: MessageEvent<{ id: number; source: string }>) => 
     // Unhighlighted code is still correct code
   }
   const html = renderMarkdown(source, (code, lang) =>
-    instance?.getLoadedLanguages().includes(lang) ? instance.codeToHtml(code, { lang, theme: THEME }) : null,
+    instance?.getLoadedLanguages().includes(lang)
+      ? instance.codeToHtml(code, { lang, themes: THEMES, defaultColor: false, colorReplacements: READABLE_COLORS })
+      : null,
   )
   self.postMessage({ id, html })
 }

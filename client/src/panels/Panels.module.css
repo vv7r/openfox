@@ -21,6 +21,10 @@
   transform: translateX(-50%);
 }
 
+.dialog[data-size='medium'] {
+  width: min(640px, calc(100vw - 16px));
+}
+
 .dialog[data-size='small'] {
   width: min(420px, calc(100vw - 16px));
 }

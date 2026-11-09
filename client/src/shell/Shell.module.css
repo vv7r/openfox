@@ -151,6 +151,28 @@
   background: rgb(var(--color-accent-primary));
 }
 
+.railDot {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgb(var(--color-primary));
+}
+
+.railDot[data-tone='success'] {
+  background: rgb(var(--color-accent-success));
+}
+
+.railDot[data-tone='warning'] {
+  background: rgb(var(--color-accent-warning));
+}
+
+.railDot[data-tone='error'] {
+  background: rgb(var(--color-accent-error));
+}
+
 .panes {
   --left-w: 280px;
   /* A width dragged with the left menu folded must still leave the files room once it opens */
@@ -202,6 +224,7 @@
 }
 
 .iconButton {
+  position: relative;
   display: flex;
   flex-shrink: 0;
   padding: 5px;
@@ -210,6 +233,10 @@
   background: none;
   color: rgb(var(--color-text-muted));
   cursor: pointer;
+}
+
+.iconButton[data-active] {
+  color: rgb(var(--color-accent-primary));
 }
 
 .iconButton:hover {
@@ -624,6 +651,11 @@
 
 .embedded .splitter {
   display: none;
+}
+
+.iconButton .railBadge {
+  top: -3px;
+  right: -3px;
 }
 
 .railBadge {

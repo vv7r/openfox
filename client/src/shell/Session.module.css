@@ -125,6 +125,44 @@
   text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.stepText:hover {
+  color: rgb(var(--color-accent-primary));
+}
+
+.criterionStatus {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgb(var(--color-bg-tertiary));
+  color: rgb(var(--color-text-secondary));
+  font-size: 12px;
+}
+
+.criterionStatus[data-status='passed'] {
+  color: rgb(var(--color-accent-success));
+}
+
+.criterionStatus[data-status='failed'] {
+  color: rgb(var(--color-accent-error));
+}
+
+.criterionStatus[data-status='completed'] {
+  color: rgb(var(--color-accent-warning));
+}
+
+.criterionText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .ghost {

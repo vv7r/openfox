@@ -1,5 +1,3 @@
-import presets from './presets.json'
-
 type Tokens = Record<string, string>
 
 export interface UserThemePreset {
@@ -15,42 +13,18 @@ export interface SystemPrefs {
   lightPreset: string
 }
 
-interface ThemeLibrary {
+export interface ThemeLibrary {
   users?: UserThemePreset[]
   prefs?: SystemPrefs
 }
 
 const STORAGE_KEY = 'openfox:theme'
+/** The resolved colours: the first paint must not wait for the list of themes. */
+const TOKENS_STORAGE_KEY = 'openfox:theme-tokens'
 const USERS_STORAGE_KEY = 'openfox:userPresets'
 const PREFS_STORAGE_KEY = 'openfox:systemThemePrefs'
 export const USER_PRESETS_KEY = 'display.userPresets'
 export const SYSTEM_PREFS_KEY = 'display.systemThemePrefs'
-const byId = new Map<string, Tokens>(presets.presets.map((preset) => [preset.id, preset.tokens as Tokens]))
-
-function presetTokens(id: string | undefined, users: UserThemePreset[] | undefined): Tokens | undefined {
-  if (!id) return undefined
-  const user = users?.find((preset) => preset.id === id)
-  return user ? { ...byId.get(user.basePreset), ...user.tokens } : byId.get(id)
-}
-
-/** The tokens a saved `display.theme` value stands for. */
-export function resolveTokens(
-  saved: string | null | undefined,
-  prefersDark: boolean,
-  library: ThemeLibrary = {},
-): Tokens {
-  const fallback = byId.get(prefersDark ? 'dark' : 'light') ?? {}
-  if (!saved) return fallback
-  try {
-    const parsed = (saved[0] === '{' ? JSON.parse(saved) : { preset: saved }) as { preset?: string; tokens?: Tokens }
-    const systemId = prefersDark ? (library.prefs?.darkPreset ?? 'dark') : (library.prefs?.lightPreset ?? 'light')
-    const id = parsed.preset === 'system' ? systemId : parsed.preset
-    return { ...fallback, ...presetTokens(id, library.users), ...parsed.tokens }
-  } catch {
-    return fallback
-  }
-}
-
 function readLibrary(): ThemeLibrary {
   try {
     const users = localStorage.getItem(USERS_STORAGE_KEY)
@@ -70,28 +44,55 @@ let lastSaved: string | null | undefined
 function scheme(): MediaQueryList {
   if (!systemScheme) {
     systemScheme = matchMedia('(prefers-color-scheme: dark)')
-    systemScheme.addEventListener('change', () => apply(lastSaved))
+    systemScheme.addEventListener('change', () => void apply(lastSaved))
   }
   return systemScheme
 }
 
-function apply(saved: string | null | undefined): void {
+function toneOf(background: string | undefined): 'dark' | 'light' {
+  const [red = 0, green = 0, blue = 0] = (background ?? '').trim().split(/\s+/).map(Number)
+  return red * 0.299 + green * 0.587 + blue * 0.114 < 128 ? 'dark' : 'light'
+}
+
+function paint(tokens: Tokens): void {
+  const root = document.documentElement
+  for (const [key, value] of Object.entries(tokens)) root.style.setProperty(`--${key}`, value)
+  const tone = toneOf(tokens['color-primary'])
+  root.dataset['tone'] = tone
+  root.style.colorScheme = tone
+}
+
+let applying = 0
+
+async function apply(saved: string | null | undefined): Promise<void> {
   lastSaved = saved
-  const tokens = resolveTokens(saved, scheme().matches, readLibrary())
-  for (const [key, value] of Object.entries(tokens)) document.documentElement.style.setProperty(`--${key}`, value)
+  const run = ++applying
+  try {
+    const { resolveTokens } = await import('./resolve')
+    if (run !== applying) return
+    const tokens = resolveTokens(saved, scheme().matches, readLibrary())
+    paint(tokens)
+    localStorage.setItem(TOKENS_STORAGE_KEY, JSON.stringify(tokens))
+  } catch {
+    // The colours already on screen stay until the next load
+  }
 }
 
 export function applyCachedTheme(): void {
+  let saved: string | null = null
   try {
-    apply(localStorage.getItem(STORAGE_KEY))
+    const tokens = localStorage.getItem(TOKENS_STORAGE_KEY)
+    if (tokens) paint(JSON.parse(tokens) as Tokens)
+    saved = localStorage.getItem(STORAGE_KEY)
   } catch {
-    apply(null)
+    // Falls back to the stylesheet's colours until the theme resolves
   }
+  void apply(saved)
 }
 
 export function applyTheme(saved: string | undefined): void {
   if (!saved) return
-  apply(saved)
+  void apply(saved)
   try {
     localStorage.setItem(STORAGE_KEY, saved)
   } catch {

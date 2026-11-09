@@ -1,3 +1,36 @@
+.feed {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toBottom {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 999px;
+  background: rgb(var(--color-bg-secondary));
+  color: rgb(var(--color-text-primary));
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+}
+
+.toBottom:hover {
+  background: rgb(var(--color-bg-tertiary));
+}
+
 .scroller {
   flex: 1;
   min-height: 0;
@@ -260,11 +293,21 @@ button.toolHeader {
   overflow-wrap: anywhere;
 }
 
+/* Tinted from the text colour, so a block stands out on every theme, white backgrounds included */
+.block {
+  --code-bg: rgb(var(--color-text-primary) / 0.06);
+}
+
+.block details,
+.block > pre {
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 6px;
+}
+
 .block details {
   margin: 0 0 0.75em;
   overflow: hidden;
-  border-radius: 6px;
-  background: rgb(var(--color-bg-secondary));
+  background: var(--code-bg);
 }
 
 .block summary {
@@ -296,14 +339,27 @@ button.toolHeader {
 .block pre {
   margin: 0;
   padding: 10px 12px;
-  background: rgb(var(--color-bg-secondary)) !important;
+  background: var(--code-bg) !important;
   font: 12.5px/1.45 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
+.block details pre {
+  background: none !important;
+}
+
 .block pre code {
   white-space: inherit;
+}
+
+/* Both palettes are in the HTML, so changing theme needs no new render */
+.block pre span {
+  color: var(--shiki-dark);
+}
+
+:global(:root[data-tone='light']) .block pre span {
+  color: var(--shiki-light);
 }
 
 .block table {

@@ -137,14 +137,7 @@ function readOnlyExtension(readOnly: boolean): Extension {
     : []
 }
 
-function isDarkTheme(): boolean {
-  const [red = 0, green = 0, blue = 0] = getComputedStyle(document.documentElement)
-    .getPropertyValue('--color-primary')
-    .trim()
-    .split(/\s+/)
-    .map(Number)
-  return red * 0.299 + green * 0.587 + blue * 0.114 < 128
-}
+const isDarkTheme = () => document.documentElement.dataset['tone'] !== 'light'
 
 interface FileMount {
   key: string
