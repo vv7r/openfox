@@ -974,7 +974,8 @@
 
   .mobileNav {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
     border-top: 1px solid rgb(var(--color-border));
   }
 
@@ -992,6 +993,15 @@
 
   .mobileNav button[data-active] {
     color: rgb(var(--color-accent-primary));
+  }
+
+  /* Files and progress each have their own button: the panel shows only one of them */
+  .workspace[data-showing='files'] > .tabs {
+    display: none;
+  }
+
+  .workspace[data-showing='progress'] .tab[data-view='files'] {
+    display: none;
   }
 }
 
@@ -1175,4 +1185,10 @@
   overflow-wrap: anywhere;
   font-size: 11px;
   color: rgb(var(--color-text-muted));
+}
+
+.menuSeparator {
+  height: 1px;
+  margin: 4px 0;
+  background: rgb(var(--color-border));
 }

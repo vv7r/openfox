@@ -1,9 +1,10 @@
 import { lazy, Suspense, useCallback, useRef } from 'react'
-import { Bot, Files, FolderTree } from 'lucide-react'
+import { Bot, Files, FolderTree, ListChecks } from 'lucide-react'
 import { t } from '../i18n'
 import { usePlugins } from '../plugins/store'
-import { usePath } from '../router'
+import { usePath, useRoute } from '../router'
 import { useApp, type MobilePane } from '../store/app'
+import { CRITERIA_VIEW, selectView, useWorkspace } from '../store/workspace'
 import { AgentPanel } from './AgentPanel'
 import { Header } from './Header'
 import { LeftPanel } from './LeftPanel'
@@ -20,11 +21,58 @@ const AutoLaunchToast = lazy(() => import('./AutoLaunchToast'))
 const AppDialogs = lazy(() => import('./AppDialogs'))
 const EMBEDDED = new URLSearchParams(location.search).has('embed')
 
+type MobileTab = 'project' | 'agent' | 'files' | 'progress'
+
+/**
+ * The right panel is two tabs on a phone: its files, and the session's progress (criteria and
+ * context), which a "Files" label did not cover.
+ */
 const MOBILE_TABS = [
-  { pane: 'project', icon: FolderTree, label: { en: 'Project', fr: 'Projet' } },
-  { pane: 'agent', icon: Bot, label: { en: 'Agent', fr: 'Agent' } },
-  { pane: 'workspace', icon: Files, label: { en: 'Files', fr: 'Fichiers' } },
-] as const satisfies ReadonlyArray<{ pane: MobilePane; icon: unknown; label: { en: string; fr: string } }>
+  { tab: 'project', pane: 'project', icon: FolderTree, label: { en: 'Project', fr: 'Projet' } },
+  { tab: 'agent', pane: 'agent', icon: Bot, label: { en: 'Agent', fr: 'Agent' } },
+  { tab: 'files', pane: 'workspace', icon: Files, label: { en: 'Files', fr: 'Fichiers' } },
+  { tab: 'progress', pane: 'workspace', icon: ListChecks, label: { en: 'Progress', fr: 'Suivi' } },
+] as const satisfies ReadonlyArray<{
+  tab: MobileTab
+  pane: MobilePane
+  icon: unknown
+  label: { en: string; fr: string }
+}>
+
+/** Progress reopens on the tab last read there, criteria or context. */
+let lastProgressView = CRITERIA_VIEW
+
+function openMobileTab(tab: MobileTab, pane: MobilePane): void {
+  const { view } = useWorkspace.getState()
+  if (view !== null) lastProgressView = view
+  useApp.setState({ mobilePane: pane })
+  if (tab === 'files') selectView(null)
+  else if (tab === 'progress') selectView(lastProgressView)
+}
+
+function MobileNav() {
+  const mobilePane = useApp((state) => state.mobilePane)
+  const view = useWorkspace((state) => state.view)
+  const { sessionId } = useRoute()
+  const current: MobileTab =
+    mobilePane === 'workspace' ? (sessionId && view !== null ? 'progress' : 'files') : mobilePane
+  return (
+    <nav className={styles.mobileNav}>
+      {MOBILE_TABS.filter(({ tab }) => tab !== 'progress' || sessionId).map(({ tab, pane, icon: Icon, label }) => (
+        <button
+          key={tab}
+          type="button"
+          data-testid={`mobile-tab-${tab}`}
+          data-active={current === tab || undefined}
+          onClick={() => openMobileTab(tab, pane)}
+        >
+          <Icon size={18} />
+          {t(label)}
+        </button>
+      ))}
+    </nav>
+  )
+}
 
 export function Shell() {
   const panesRef = useRef<HTMLDivElement | null>(null)
@@ -109,19 +157,7 @@ export function Shell() {
         </div>
       </div>
       <StatusBar />
-      <nav className={styles.mobileNav}>
-        {MOBILE_TABS.map(({ pane, icon: Icon, label }) => (
-          <button
-            key={pane}
-            type="button"
-            data-active={mobilePane === pane || undefined}
-            onClick={() => useApp.setState({ mobilePane: pane })}
-          >
-            <Icon size={18} />
-            {t(label)}
-          </button>
-        ))}
-      </nav>
+      <MobileNav />
     </div>
   )
 }

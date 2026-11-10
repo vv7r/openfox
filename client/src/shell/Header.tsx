@@ -1,6 +1,6 @@
 import { Bell, ChevronDown, GitBranch, Menu, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { openPanel, startNewProject, toggleColumn } from '../controller'
+import { openPanel, showProjects, startNewProject, toggleColumn } from '../controller'
 import { t } from '../i18n'
 import { Link, navigate, useRoute } from '../router'
 import { PluginZone, usePluginContext } from '../plugins/Slots'
@@ -37,6 +37,14 @@ function ProjectMenu() {
           // Focus back on the trigger would close the new project field as soon as it opens
           onCloseAutoFocus={(event) => useApp.getState().creatingProject && event.preventDefault()}
         >
+          {/* Above the projects: a long list would push them out of reach on a phone */}
+          <DropdownMenu.Item className={styles.menuItem} data-testid="all-projects" onSelect={showProjects}>
+            {t({ en: 'All projects', fr: 'Tous les projets' })}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={styles.menuItem} data-testid="menu-new-project" onSelect={startNewProject}>
+            {t({ en: 'New project…', fr: 'Nouveau projet…' })}
+          </DropdownMenu.Item>
+          {projects.length > 0 && <DropdownMenu.Separator className={styles.menuSeparator} />}
           {projects.map((project) => (
             <DropdownMenu.Item
               key={project.id}
@@ -46,9 +54,6 @@ function ProjectMenu() {
               {project.name}
             </DropdownMenu.Item>
           ))}
-          <DropdownMenu.Item className={styles.menuItem} onSelect={startNewProject}>
-            {t({ en: 'New project…', fr: 'Nouveau projet…' })}
-          </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

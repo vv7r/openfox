@@ -432,6 +432,14 @@ export function revealOpenSession(): void {
 /** The home page lists projects on the left and has no use for the files. */
 export const showHomeColumns = (): void => setColumns({ left: false, right: true })
 
+/** The project list, which is the left panel of the home page (a pane of its own on a phone). */
+export function showProjects(): void {
+  showHomeColumns()
+  // After navigating: opening another route puts the phone back on the agent pane
+  navigate('/')
+  useApp.setState({ mobilePane: 'project' })
+}
+
 /** Projects are named in the left panel, which only lists them on the home page. */
 export function startNewProject(): void {
   showHomeColumns()

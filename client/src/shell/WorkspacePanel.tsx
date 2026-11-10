@@ -43,7 +43,7 @@ function Loading() {
 
 function ViewTab({ view, active, children }: { view: string | null; active: boolean; children: ReactNode }) {
   return (
-    <span className={styles.tab} data-active={active || undefined}>
+    <span className={styles.tab} data-active={active || undefined} data-view={view ?? 'files'}>
       <button
         type="button"
         className={styles.tabLabel}
@@ -87,7 +87,7 @@ export function WorkspacePanel() {
   const [terminalOpen, setTerminalOpen] = useState(false)
 
   return (
-    <section className={styles.workspace} data-pane="workspace">
+    <section className={styles.workspace} data-pane="workspace" data-showing={view === null ? 'files' : 'progress'}>
       <div className={styles.tabs}>
         <ViewTab view={null} active={view === null}>
           {t({ en: 'Files', fr: 'Fichiers' })}
