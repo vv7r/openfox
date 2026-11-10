@@ -4,7 +4,9 @@ import { ArrowDown } from 'lucide-react'
 import { t } from '../i18n'
 import { useRoute } from '../router'
 import { useApp } from '../store/app'
+import { prewarmMarkdown } from '../markdown/cache'
 import { useFeed } from '../store/feed'
+import { estimateItemHeight } from './estimate'
 import { deriveItems } from './items'
 import { registerFeedScroll } from './navigation'
 import { FeedRow } from './MessageItem'
@@ -13,6 +15,12 @@ import styles from './Feed.module.css'
 const UpNext = lazy(() => import('./UpNext'))
 
 const STICK_THRESHOLD_PX = 64
+const FALLBACK_WIDTH_PX = 360
+/** Rows rendered beyond the screen: scrolling up meets them already laid out. */
+const OVERSCAN_ROWS = 6
+const PREWARM_DELAY_MS = 300
+/** Messages already handed to the parser: an agent turn adds one at a time, the rest is done. */
+const prewarmed = new Set<string>()
 
 export function Feed() {
   const ids = useFeed((state) => state.ids)
@@ -28,8 +36,13 @@ export function Feed() {
     count: items.length,
     getScrollElement: () => scroller.current,
     getItemKey: (index) => items[index]?.key ?? index,
-    estimateSize: () => 160,
-    overscan: 3,
+    estimateSize: (index) => {
+      const item = items[index]
+      return item
+        ? estimateItemHeight(item, useFeed.getState().byId, scroller.current?.clientWidth ?? FALLBACK_WIDTH_PX)
+        : 0
+    },
+    overscan: OVERSCAN_ROWS,
     useFlushSync: false,
   })
 
@@ -56,6 +69,22 @@ export function Feed() {
       }),
     [virtualizer],
   )
+
+  // In the background, after the visible rows have asked for theirs
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const { byId } = useFeed.getState()
+      prewarmMarkdown(
+        ids.flatMap((id) => {
+          const message = byId[id]
+          if (prewarmed.has(id) || message?.role !== 'assistant' || message.isStreaming || !message.content) return []
+          prewarmed.add(id)
+          return [message.content]
+        }),
+      )
+    }, PREWARM_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [ids])
 
   const totalSize = virtualizer.getTotalSize()
   useLayoutEffect(() => {

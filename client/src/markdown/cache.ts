@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { scanBlocks } from './blocks'
 
 const MAX_ENTRIES = 2000
 
@@ -62,4 +63,20 @@ export function useMarkdownHtml(source: string): string | null {
   }, [source])
 
   return state.source === source ? state.html : (cache.get(source) ?? null)
+}
+
+const ignore = () => {}
+
+/**
+ * Parses the blocks of finished messages ahead of time, newest first, so a message scrolled
+ * into view shows at its final size instead of as raw text that then reflows.
+ */
+export function prewarmMarkdown(texts: string[]): void {
+  for (const text of [...texts].reverse()) {
+    const { blocks, offset } = scanBlocks(text, 0)
+    const tail = text.slice(offset).trim()
+    for (const source of tail ? [...blocks, tail] : blocks) {
+      if (!cache.has(source)) request(source, ignore)
+    }
+  }
 }
