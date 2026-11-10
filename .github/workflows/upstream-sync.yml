@@ -1,0 +1,101 @@
+name: Upstream sync
+
+# Proposes OpenFox's latest develop as a pull request into client-next. Nothing is merged
+# automatically. Scheduled workflows only run from the default branch, so this file must
+# also be on it for the weekly run; "Run workflow" works from any branch.
+#
+# Needs a SYNC_TOKEN secret (fine-grained token: contents and pull requests, read and
+# write, on this repository): a pull request opened with the default token starts no CI.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
+      TARGET: client-next
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: client-next
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/co-l/openfox.git
+          git fetch --no-tags upstream develop
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898213+github-actions[bot]@users.noreply.github.com'
+
+      - name: Merge into a sync branch
+        id: merge
+        run: |
+          if git merge-base --is-ancestor upstream/develop HEAD; then
+            echo "status=up-to-date" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          upstream_sha=$(git rev-parse --short upstream/develop)
+          branch="sync/upstream-$upstream_sha"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            echo "status=already-proposed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base=$(git merge-base HEAD upstream/develop)
+          {
+            echo 'Merges `upstream/develop` (`'"$upstream_sha"'`) into `client-next`.'
+            echo
+            echo '## Upstream commits'
+            git log --no-merges --format='- %h %s' "$base..upstream/develop"
+            echo
+            echo '## To port by hand into `client/`'
+            echo 'The rewritten client does not receive these by merging. Changes in `web/`:'
+            echo
+            echo '```'
+            git diff --stat "$base" upstream/develop -- web/ | tail -n 40
+            echo '```'
+            echo
+            echo 'Protocol and shared types changed (`client/` builds on them):'
+            echo
+            echo '```'
+            git diff --stat "$base" upstream/develop -- src/shared/ | tail -n 20
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+          git checkout -b "$branch"
+          if git merge --no-edit upstream/develop; then
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
+            git merge --abort
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open the pull request
+        if: steps.merge.outputs.status == 'merged'
+        run: |
+          git push origin "${{ steps.merge.outputs.branch }}"
+          gh pr create --base "$TARGET" --head "${{ steps.merge.outputs.branch }}" \
+            --title "Sync upstream develop (${{ steps.merge.outputs.sha }})" \
+            --body-file "$RUNNER_TEMP/body.md"
+
+      # Issues are off on this fork: a failed run (and its e-mail) carries the report
+      - name: Report a conflict
+        if: steps.merge.outputs.status == 'conflict'
+        run: |
+          {
+            echo 'Merging `upstream/develop` (`${{ steps.merge.outputs.sha }}`) into `client-next` conflicts in:'
+            echo
+            sed 's/^/- /' "$RUNNER_TEMP/conflicts.txt"
+            echo
+            cat "$RUNNER_TEMP/body.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1

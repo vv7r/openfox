@@ -1,0 +1,67 @@
+name: Fork CI
+
+# The local pre-commit hook only runs the fast checks: the test suites run here.
+on:
+  push:
+    branches: [client-next]
+  pull_request:
+    branches: [client-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: cd web && npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format
+      - run: npm run duplicate
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENFOX_TEST_TIMEOUT_MULTIPLIER: '2'
+      OPENFOX_E2E_MAX_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: cd web && npm ci
+      # The root suite includes client/src tests
+      - run: cd client && npm ci
+      - run: npm test
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      # Also enforces the 150 KB entry budget
+      - run: npx vite build
