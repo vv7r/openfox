@@ -60,8 +60,13 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: client/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+      # The client's tests import vitest from the root install, as they do locally
+      - run: npm ci
+        working-directory: .
       - run: npm ci
       - run: npx tsc --noEmit
-      # Also enforces the 150 KB entry budget
+      # Also enforces the entry budget
       - run: npx vite build

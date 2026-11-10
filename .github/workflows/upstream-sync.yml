@@ -1,11 +1,13 @@
 name: Upstream sync
 
 # Proposes OpenFox's latest develop as a pull request into client-next. Nothing is merged
-# automatically. Scheduled workflows only run from the default branch, so this file must
-# also be on it for the weekly run; "Run workflow" works from any branch.
+# automatically. GitHub runs a scheduled or manual ("Run workflow") workflow only from the
+# default branch, which is client-next on this fork.
 #
-# Needs a SYNC_TOKEN secret (fine-grained token: contents and pull requests, read and
-# write, on this repository): a pull request opened with the default token starts no CI.
+# Needs a SYNC_TOKEN secret (fine-grained token on this repository, read and write on
+# contents, pull requests and workflows): a pull request opened with the default token
+# starts no CI, and a merge that touches upstream's workflows cannot be pushed without the
+# workflows permission.
 on:
   schedule:
     - cron: '0 6 * * 1'
