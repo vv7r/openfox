@@ -40,6 +40,8 @@ export default defineConfig({
     entryBudget(),
     VitePWA({
       registerType: 'autoUpdate',
+      // The icons are precached by globPatterns already: listed twice, workbox refuses to install
+      includeManifestIcons: false,
       manifest: {
         name: 'OpenFox',
         short_name: 'OpenFox',
@@ -56,6 +58,8 @@ export default defineConfig({
         // Only the shell is precached: hundreds of language grammars must not land on a phone up front
         globPatterns: ['index.html', 'assets/index-*.{js,css}', '**/*.{png,svg,ico}'],
         navigateFallbackDenylist: [/^\/api/, /^\/ws/],
+        // The server serves sw.js but not a separate workbox-*.js: one file keeps the PWA installable
+        inlineWorkboxRuntime: true,
         runtimeCaching: [
           {
             urlPattern: /\/assets\/.+\.(?:js|css|woff2)$/,
