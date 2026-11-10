@@ -5,6 +5,7 @@ import { t } from '../../i18n'
 import type { ToolStatus } from '../../lib/toolStatus'
 import { useApp } from '../../store/app'
 import { Markdown } from '../MessageItem'
+import { prettyJson } from '../systemText'
 import { CodeBlock, DiffView, EditContextView, FilePreview, ImageView, imageSource, readFileCode } from './CodeViews'
 import { buildEditorUrl, extractCommand, metadataLabel, parseMetadataArgs } from './parse'
 import { detectRemoteCommand, detectRemoteExecution } from './remote-execution'
@@ -176,7 +177,14 @@ function Generic({ call, status }: { call: ToolCall; status: ToolStatus }) {
       {Object.keys(args).length > 0 && (
         <div>
           <Label text={t({ en: 'Arguments', fr: 'Arguments' })} />
-          <pre className={styles.output}>{JSON.stringify(args, null, 2)}</pre>
+          <dl className={styles.args}>
+            {Object.entries(args).map(([name, value]) => (
+              <div key={name}>
+                <dt>{name}</dt>
+                <dd>{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       )}
       {status === 'success' && result && (
@@ -184,7 +192,9 @@ function Generic({ call, status }: { call: ToolCall; status: ToolStatus }) {
           <Label
             text={t({ en: 'Result ({{ms}} ms)', fr: 'Résultat ({{ms}} ms)' }, { ms: Math.round(result.durationMs) })}
           />
-          <pre className={styles.output}>{result.output || t({ en: 'No output', fr: 'Aucune sortie' })}</pre>
+          <pre className={styles.output}>
+            {result.output ? prettyJson(result.output) : t({ en: 'No output', fr: 'Aucune sortie' })}
+          </pre>
           {result.truncated && <Truncated />}
         </div>
       )}

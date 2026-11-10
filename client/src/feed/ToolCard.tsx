@@ -4,7 +4,7 @@ import { normalizeAskOptions } from '@shared/ask-options.js'
 import type { PreparingToolCall, ToolCall } from '@shared/types.js'
 import { answerQuestion, confirmPath } from '../actions'
 import { t } from '../i18n'
-import { formatToolArgsWithMetadata } from '../lib/formatToolArgs'
+import { formatToolArgsWithMetadata, splitToolName } from '../lib/formatToolArgs'
 import { deriveToolCallStatus, type ToolStatus } from '../lib/toolStatus'
 import { useApp } from '../store/app'
 import { useToolViews } from './tools/loader'
@@ -13,6 +13,20 @@ import styles from './Feed.module.css'
 const COLLAPSE_ABOVE_CHARS = 600
 
 const STATUS_ICON: Record<ToolStatus, string> = { pending: '●', success: '✓', error: '✗', interrupted: '✗' }
+
+/** The tool's own name, with the MCP server that provides it as a tag. */
+function ToolName({ name }: { name: string }) {
+  const servers = useApp((state) => state.mcpServers)
+  const split = splitToolName(name, servers)
+  return (
+    <>
+      <span className={styles.toolName} title={name}>
+        {split.name}
+      </span>
+      {split.server && <span className={styles.toolServer}>{split.server}</span>}
+    </>
+  )
+}
 
 function PathConfirmation({ callId }: { callId: string }) {
   const confirmation = useApp((state) =>
@@ -161,7 +175,7 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
       >
         <Chevron size={13} className={styles.toolChevron} />
         <span className={styles.toolStatus}>{STATUS_ICON[status]}</span>
-        <span className={styles.toolName}>{call.name}</span>
+        <ToolName name={call.name} />
         <span className={styles.toolArgs}>{label}</span>
         {call.result && <span className={styles.toolDuration}>{`${(call.result.durationMs / 1000).toFixed(1)}s`}</span>}
       </button>
@@ -194,7 +208,7 @@ export function PreparingCard({ preparing }: { preparing: PreparingToolCall }) {
     <div className={styles.tool} data-remote={remote ? true : undefined}>
       <div className={styles.toolHeader} data-status="pending">
         <span className={styles.toolStatus}>{STATUS_ICON.pending}</span>
-        <span className={styles.toolName}>{preparing.name}</span>
+        <ToolName name={preparing.name} />
         <span className={styles.toolArgs}>{command ?? preparing.arguments?.slice(-160)}</span>
       </div>
       {showPreview && views && <views.PreparingPreview preparing={preparing} />}

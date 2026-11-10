@@ -19,7 +19,7 @@ import type { DevServerStatus } from '@shared/dev-server.js'
 import type { DevServerStatePayload, PendingPathConfirmationPayload, PendingQuestionPayload } from '@shared/protocol.js'
 import { TOKEN_KEY, getJson, readToken, sendJson } from './api'
 import { applyCachedLocale, applyLocale } from './i18n'
-import { currentRoute, navigate, subscribeRoute, type Route } from './router'
+import { currentRoute, mobilePaneFor, navigate, subscribeRoute, type Route } from './router'
 import {
   applyAppMessage,
   confirmationsFromServer,
@@ -174,7 +174,11 @@ async function loadMcpStatus(sessionId: string): Promise<void> {
     getJson<{ servers: Array<{ name: string; status: string }> }>('/api/mcp/servers'),
     getJson<{ disabledServers: string[] }>(`/api/sessions/${sessionId}/mcp/overrides`),
   ])
-  if (sessionId === openSessionId) useApp.setState({ mcpActive: hasActiveMcp(servers, disabledServers) })
+  if (sessionId === openSessionId)
+    useApp.setState({
+      mcpActive: hasActiveMcp(servers, disabledServers),
+      mcpServers: servers.map((server) => server.name),
+    })
 }
 
 async function loadDevServerState(sessionId: string, workdir: string): Promise<void> {
@@ -287,6 +291,8 @@ async function refreshConfirmations(projectId: string): Promise<void> {
 let routeSynced = false
 
 function syncRoute(route: Route = currentRoute()): void {
+  if (route.projectId !== openProjectId || route.sessionId !== openSessionId)
+    useApp.setState({ mobilePane: mobilePaneFor(route) })
   if (route.projectId !== openProjectId) {
     openProjectId = route.projectId
     useApp.setState({ sessions: [], runningTasks: 0, confirmationsElsewhere: {} })
@@ -300,7 +306,7 @@ function syncRoute(route: Route = currentRoute()): void {
     openSessionId = route.sessionId
     historyLoaded = false
     resetFeed(route.sessionId)
-    useApp.setState({ ...SESSION_DEFAULTS, mobilePane: 'agent' })
+    useApp.setState(SESSION_DEFAULTS)
     if (route.sessionId) {
       markSessionSeen(route.sessionId)
       void loadSession(route.sessionId)

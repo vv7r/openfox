@@ -87,9 +87,34 @@ export function formatToolArgs(tool: string, args: Record<string, unknown>): str
     return label
   }
 
-  // Fallback: stringify with truncation
-  const str = JSON.stringify(args)
-  return str.length > 50 ? str.slice(0, 50) + '...' : str
+  return summarizeArgs(args)
+}
+
+/** Arguments that say most about a call, in the order they are worth showing first. */
+const LEADING_ARGS = ['path', 'file', 'command', 'query', 'url', 'pattern', 'prefix', 'name', 'id', 'action']
+const MAX_SIDE_VALUE = 30
+const SEPARATOR = '  ·  '
+
+const shorten = (value: string): string =>
+  value.length > MAX_SIDE_VALUE ? `${value.slice(0, MAX_SIDE_VALUE - 1)}…` : value
+
+/** A tool with no rule of its own: its main argument, then the other short ones by name. */
+function summarizeArgs(args: Record<string, unknown>): string {
+  const scalars = Object.entries(args).filter(
+    ([, value]) => ['string', 'number', 'boolean'].includes(typeof value) && String(value) !== '',
+  )
+  const lead = LEADING_ARGS.find((key) => scalars.some(([name]) => name === key)) ?? scalars[0]?.[0]
+  if (lead === undefined) return ''
+  const rest = scalars.filter(([name]) => name !== lead).map(([name, value]) => `${name} ${shorten(String(value))}`)
+  return [String(args[lead]), ...rest].join(SEPARATOR)
+}
+
+/** MCP tools reach the agent as `<server>_<tool>`: shown apart, the tool keeps its own name. */
+export function splitToolName(name: string, servers: readonly string[]): { name: string; server?: string } {
+  const server = servers
+    .filter((candidate) => name.startsWith(`${candidate}_`) && name.length > candidate.length + 1)
+    .sort((a, b) => b.length - a.length)[0]
+  return server ? { name: name.slice(server.length + 1), server } : { name }
 }
 
 /**

@@ -444,3 +444,28 @@
     opacity: 0.35;
   }
 }
+
+.args {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.args > div {
+  display: grid;
+  grid-template-columns: minmax(5rem, max-content) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.args dt {
+  color: rgb(var(--color-text-muted));
+  font-family: var(--font-mono);
+}
+
+.args dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

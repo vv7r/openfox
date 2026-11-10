@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { parseRoute, readonlySessionId } from './router'
+import { mobilePaneFor, parseRoute, readonlySessionId } from './router'
 
 describe('readonlySessionId', () => {
   it('only matches the read-only route', () => {
@@ -18,5 +18,19 @@ describe('parseRoute', () => {
   it('treats anything else as home', () => {
     expect(parseRoute('/')).toEqual({ projectId: null, sessionId: null })
     expect(parseRoute('/settings')).toEqual({ projectId: null, sessionId: null })
+  })
+})
+
+describe('mobilePaneFor', () => {
+  it('shows the conversation of an open session', () => {
+    expect(mobilePaneFor({ projectId: 'p', sessionId: 's' })).toBe('agent')
+  })
+
+  it('shows the session list of a project with no session open yet', () => {
+    expect(mobilePaneFor({ projectId: 'p', sessionId: null })).toBe('project')
+  })
+
+  it('shows the home page outside any project', () => {
+    expect(mobilePaneFor({ projectId: null, sessionId: null })).toBe('agent')
   })
 })

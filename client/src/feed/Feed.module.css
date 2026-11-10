@@ -1170,3 +1170,42 @@ button.toolHeader {
   font-size: 12px;
   text-align: center;
 }
+
+.toolServer {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 3px;
+  color: rgb(var(--color-text-muted));
+  font-size: 10.5px;
+  line-height: 15px;
+}
+
+.autoPromptBody {
+  max-height: 24rem;
+  margin-top: 6px;
+  padding: 10px 14px;
+  overflow: auto;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 6px;
+  background: rgb(var(--color-secondary));
+  color: rgb(var(--color-text-secondary));
+  font-size: 13px;
+  font-style: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+/* Section titles of a prompt, not page titles */
+.autoPromptBody h1,
+.autoPromptBody h2,
+.autoPromptBody h3 {
+  margin: 10px 0 4px;
+  color: rgb(var(--color-text-primary));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.autoPromptBody h1:first-child {
+  margin-top: 0;
+}

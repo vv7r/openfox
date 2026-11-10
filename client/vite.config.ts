@@ -4,7 +4,8 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const ENTRY_BUDGET_GZIP_BYTES = 150 * 1024
+// 150 KB was the target; the user accepted a slight overrun on 2026-11-09
+const ENTRY_BUDGET_GZIP_BYTES = 152 * 1024
 
 /** Fails the build when the code loaded before first paint outgrows the budget. */
 function entryBudget(): Plugin {

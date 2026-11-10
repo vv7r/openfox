@@ -5,6 +5,11 @@ export interface Route {
   sessionId: string | null
 }
 
+/** The pane a phone shows on arriving at a route: a project without a session lists them. */
+export function mobilePaneFor(route: Route): 'agent' | 'project' {
+  return route.projectId && !route.sessionId ? 'project' : 'agent'
+}
+
 /** The read-only copy of a session opens outside the shell, with no socket. */
 export function readonlySessionId(path: string): string | null {
   return /^\/p\/[^/]+\/s\/([^/]+)\/readonly\/?$/.exec(path)?.[1] ?? null

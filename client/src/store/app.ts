@@ -106,6 +106,8 @@ export interface AppState {
   settingsTab: string | null
   /** At least one connected MCP server is on for the open session. */
   mcpActive: boolean
+  /** Names of the MCP servers, whose tools reach the agent prefixed with them. */
+  mcpServers: string[]
   devServerState: DevServerState
   /** The item a settings tab should open straight into. */
   settingsEdit: { id: string; scope?: WorkflowScope } | null
@@ -186,6 +188,7 @@ export const SESSION_DEFAULTS = {
   execution: null,
   agentDialog: null,
   mcpActive: false,
+  mcpServers: [],
   devServerState: 'off',
 } satisfies Partial<AppState>
 

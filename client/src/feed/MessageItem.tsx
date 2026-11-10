@@ -14,6 +14,7 @@ import { toElements } from './elements'
 import type { FeedItem } from './items'
 import { forgetThinking, thinkingSeconds } from './thinkingClock'
 import { CriteriaCard, PreparingCard, ToolCard } from './ToolCard'
+import { readableReminder } from './systemText'
 import styles from './Feed.module.css'
 
 const MessageAttachments = lazy(() => import('./MessageAttachments'))
@@ -193,7 +194,11 @@ function AutoPrompt({ message }: { message: Message }) {
         <span className={styles.autoPromptDot} style={{ background: metadata?.color ?? 'currentColor' }} />
         <span>{`${metadata?.name ?? t({ en: 'Agent', fr: 'Agent' })} · ${kind}`}</span>
       </button>
-      {open && <pre className={styles.toolOutput}>{message.content}</pre>}
+      {open && (
+        <div className={styles.autoPromptBody}>
+          <Markdown text={readableReminder(message.content)} streaming={false} />
+        </div>
+      )}
     </div>
   )
 }
@@ -232,7 +237,7 @@ function Other({ message }: { message: Message }) {
   if (message.isSystemGenerated) {
     return (
       <div className={styles.user} data-system>
-        {message.content}
+        {readableReminder(message.content)}
       </div>
     )
   }
