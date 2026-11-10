@@ -169,7 +169,8 @@ export function Criteria({ entries }: { entries: MetadataEntry[] }) {
               data-testid="criterion-text"
               onClick={() => setOpenId(entry.id)}
             >
-              {entry.description}
+              {/* Safari ignores line-clamp on a button itself */}
+              <span className={styles.stepClamp}>{entry.description}</span>
             </button>
             <button
               type="button"
