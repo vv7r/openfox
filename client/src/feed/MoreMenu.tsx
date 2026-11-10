@@ -2,11 +2,11 @@ import { useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { EllipsisVertical, Pencil } from 'lucide-react'
 import type { Attachment, WorkflowScope } from '@shared/types.js'
-import { launchWorkflow, loadCommand, sendCommand } from '../actions'
 import { showSettings } from '../controller'
 import { t } from '../i18n'
 import { useApp, type NamedItem } from '../store/app'
-import { fillTemplate, parametersToAsk, templateParams, uniqueById, withTypedText, type ParamRequest } from './launch'
+import { uniqueById, type ParamRequest } from './launch'
+import { runCommandItem, runWorkflowItem } from './launchItem'
 import feedStyles from './Feed.module.css'
 import styles from './MoreMenu.module.css'
 
@@ -90,39 +90,12 @@ export default function MoreMenu({ workdir, typedText, attachments, clearCompose
 
   const runWorkflow = (workflow: NamedItem, subGroup?: string) => {
     close()
-    const options = { ...(workflow.scope ? { scope: workflow.scope } : {}), ...(subGroup ? { subGroup } : {}) }
-    const parameters = parametersToAsk(workflow.parameters)
-    if (parameters.length === 0) {
-      launchWorkflow(workflow.id, undefined, options)
-      return
-    }
-    askParams({
-      name: workflow.name,
-      confirmLabel: t({ en: 'Run workflow', fr: 'Exécuter le workflow' }),
-      parameters,
-      onConfirm: (values) => launchWorkflow(workflow.id, values, options),
-    })
+    runWorkflowItem(workflow, askParams, subGroup)
   }
 
   const runCommand = async (command: NamedItem) => {
     close()
-    if (!workdir) return
-    const { prompt, agentMode } = await loadCommand(command.id, workdir)
-    const send = (text: string) => {
-      void sendCommand(withTypedText(typedText, text), agentMode, attachments)
-      clearComposer()
-    }
-    const keys = templateParams(prompt)
-    if (keys.length === 0) {
-      send(prompt)
-      return
-    }
-    askParams({
-      name: command.name,
-      confirmLabel: t({ en: 'Launch command', fr: 'Lancer la commande' }),
-      parameters: keys.map((key, position) => ({ id: key, label: key, position })),
-      onConfirm: (values) => send(fillTemplate(prompt, values)),
-    })
+    await runCommandItem(command, { workdir, typedText, attachments, clearComposer, askParams })
   }
 
   const empty =

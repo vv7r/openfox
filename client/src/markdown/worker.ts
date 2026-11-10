@@ -21,11 +21,11 @@ async function highlighterFor(source: string): Promise<Highlighter | null> {
   return instance
 }
 
-self.onmessage = async (event: MessageEvent<{ id: number; source: string }>) => {
-  const { id, source } = event.data
+self.onmessage = async (event: MessageEvent<{ id: number; source: string; highlight: boolean }>) => {
+  const { id, source, highlight } = event.data
   let instance: Highlighter | null = null
   try {
-    instance = await highlighterFor(source)
+    if (highlight) instance = await highlighterFor(source)
   } catch {
     // Unhighlighted code is still correct code
   }

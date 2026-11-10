@@ -1,18 +1,7 @@
 import type { ComponentType } from 'react'
-import {
-  Cpu,
-  GitBranch,
-  House,
-  ListTodo,
-  LogOut,
-  MessagesSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plug,
-  Settings,
-} from 'lucide-react'
+import { Cpu, GitBranch, House, ListTodo, LogOut, MessagesSquare, Plug, Settings } from 'lucide-react'
 import type { DevServerState } from '@shared/dev-server.js'
-import { logout, openPanel, showHomeColumns, toggleColumn, unfoldLeftColumn } from '../controller'
+import { logout, openPanel, showHomeColumns, toggleColumn } from '../controller'
 import { t } from '../i18n'
 import { PluginMenu } from '../plugins/PluginMenu'
 import { Link, usePath, useRoute } from '../router'
@@ -65,7 +54,6 @@ export function Rail() {
   const requiresAuth = useApp((state) => state.requiresAuth)
   const mcpActive = useApp((state) => state.mcpActive)
   const devServerState = useApp((state) => state.devServerState)
-  const Toggle = collapsed ? PanelLeftOpen : PanelLeftClose
   return (
     <nav className={styles.rail}>
       <Link
@@ -82,13 +70,17 @@ export function Rail() {
         <Link
           href={`/p/${projectId}`}
           className={styles.railItem}
-          data-active={path !== '/split-view' || undefined}
+          data-active={(path !== '/split-view' && !collapsed) || undefined}
           data-testid="rail-sessions"
-          title={t({ en: 'Sessions', fr: 'Sessions' })}
+          title={
+            collapsed
+              ? t({ en: 'Show sessions', fr: 'Afficher les sessions' })
+              : t({ en: 'Hide sessions', fr: 'Masquer les sessions' })
+          }
           onClick={(event) => {
-            // Shows the list without leaving the open session
+            // Folds or unfolds the list without leaving the open session
             event.preventDefault()
-            unfoldLeftColumn()
+            toggleColumn('left')
           }}
         >
           <MessagesSquare size={20} />
@@ -144,18 +136,6 @@ export function Rail() {
           <LogOut size={20} />
         </button>
       )}
-      <button
-        type="button"
-        className={styles.railItem}
-        title={
-          collapsed
-            ? t({ en: 'Show left panel', fr: 'Afficher le panneau gauche' })
-            : t({ en: 'Hide left panel', fr: 'Masquer le panneau gauche' })
-        }
-        onClick={() => toggleColumn('left')}
-      >
-        <Toggle size={20} />
-      </button>
     </nav>
   )
 }

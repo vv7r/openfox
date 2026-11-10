@@ -14,6 +14,7 @@ function socketUrl(): string {
 }
 
 export class Socket {
+  private retryTimer: ReturnType<typeof setTimeout> | undefined
   private socket: WebSocket | null = null
   private attempts = 0
 
@@ -35,8 +36,16 @@ export class Socket {
     }
     socket.onclose = () => {
       this.onStatus('disconnected')
-      setTimeout(() => this.connect(), Math.min(250 * 2 ** this.attempts++, MAX_BACKOFF_MS))
+      this.retryTimer = setTimeout(() => this.connect(), Math.min(250 * 2 ** this.attempts++, MAX_BACKOFF_MS))
     }
+  }
+
+  /** Skips the backoff wait after the user asks to reconnect. */
+  reconnect(): void {
+    if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) return
+    this.attempts = 0
+    clearTimeout(this.retryTimer)
+    this.connect()
   }
 
   get connected(): boolean {

@@ -5,6 +5,11 @@ export interface Route {
   sessionId: string | null
 }
 
+/** The read-only copy of a session opens outside the shell, with no socket. */
+export function readonlySessionId(path: string): string | null {
+  return /^\/p\/[^/]+\/s\/([^/]+)\/readonly\/?$/.exec(path)?.[1] ?? null
+}
+
 export function parseRoute(path: string): Route {
   const match = /^\/p\/([^/]+)(?:\/s\/([^/]+))?\/?$/.exec(path)
   return { projectId: match?.[1] ?? null, sessionId: match?.[2] ?? null }

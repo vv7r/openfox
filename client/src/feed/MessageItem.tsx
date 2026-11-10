@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Copy, GitFork, Pencil, RotateCcw } from 'lucide-react'
 import type { Message } from '@shared/types.js'
 import { forkAt, replayMessage } from '../actions'
@@ -12,8 +12,11 @@ import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { toElements } from './elements'
 import type { FeedItem } from './items'
+import { forgetThinking, thinkingSeconds } from './thinkingClock'
 import { CriteriaCard, PreparingCard, ToolCard } from './ToolCard'
 import styles from './Feed.module.css'
+
+const MessageAttachments = lazy(() => import('./MessageAttachments'))
 
 // The virtualized feed drops blocks scrolled out of view: what was folded must survive that
 const foldedCode = new Set<string>()
@@ -69,13 +72,47 @@ export function Markdown({ text, streaming }: { text: string; streaming: boolean
   )
 }
 
-function Thinking({ text, active, duration }: { text: string; active: boolean; duration: number | undefined }) {
+const THINKING_TICK_MS = 1000
+
+/** Ticks on its own so that a running clock never re-renders the message. */
+function ThinkingClock({ messageId }: { messageId: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), THINKING_TICK_MS)
+    return () => clearInterval(timer)
+  }, [])
+  return (
+    <span data-testid="thinking-clock">
+      {t(
+        { en: 'Thinking… ({{time}})', fr: 'Réflexion… ({{time}})' },
+        { time: formatTime(thinkingSeconds(messageId, now), false) },
+      )}
+    </span>
+  )
+}
+
+function Thinking({
+  messageId,
+  text,
+  active,
+  duration,
+}: {
+  messageId: string
+  text: string
+  active: boolean
+  duration: number | undefined
+}) {
   const [open, setOpen] = useState(useApp.getState().display['display.showThinking'] === 'true')
-  const label = active
-    ? t({ en: 'Thinking…', fr: 'Réflexion…' })
-    : duration
-      ? t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(duration) })
-      : t({ en: 'Thought', fr: 'A réfléchi' })
+  useEffect(() => {
+    if (!active) forgetThinking(messageId)
+  }, [active, messageId])
+  const label = active ? (
+    <ThinkingClock messageId={messageId} />
+  ) : duration ? (
+    t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(duration) })
+  ) : (
+    t({ en: 'Thought', fr: 'A réfléchi' })
+  )
   return (
     <div className={styles.thinking}>
       <button type="button" onClick={() => setOpen(!open)}>
@@ -115,6 +152,7 @@ function Assistant({ message }: { message: Message }) {
     <>
       {thinking && (
         <Thinking
+          messageId={message.id}
           text={thinking}
           active={streaming && elements.length === 0}
           duration={message.stats?.thinkingDuration}
@@ -263,6 +301,11 @@ function UserMessage({ message }: { message: Message }) {
         <MessagePluginActions messageId={message.id} />
       </div>
       <div className={styles.user}>{message.content}</div>
+      {message.attachments && message.attachments.length > 0 && (
+        <Suspense fallback={null}>
+          <MessageAttachments attachments={message.attachments} messageId={message.id} />
+        </Suspense>
+      )}
     </div>
   )
 }

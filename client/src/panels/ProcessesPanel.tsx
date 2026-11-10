@@ -69,6 +69,8 @@ function DevServer({ workdir }: { workdir: string }) {
   const [logs, setLogs] = useState('')
   const [command, setCommand] = useState('')
   const [url, setUrl] = useState('')
+  const [hotReload, setHotReload] = useState(false)
+  const [disableInspect, setDisableInspect] = useState(false)
   const seeded = useRef(false)
   const config = status.data?.config
 
@@ -77,6 +79,8 @@ function DevServer({ workdir }: { workdir: string }) {
       seeded.current = true
       setCommand(config.command)
       setUrl(config.url ?? '')
+      setHotReload(config.hotReload ?? false)
+      setDisableInspect(config.disableInspect ?? false)
     }
   }, [config])
 
@@ -100,7 +104,7 @@ function DevServer({ workdir }: { workdir: string }) {
   }
 
   const saveConfig = async () => {
-    await sendJson(`/api/dev-server/config?${query}`, 'POST', { ...config, command, url })
+    await sendJson(`/api/dev-server/config?${query}`, 'POST', { ...config, command, url, hotReload, disableInspect })
     status.reload()
   }
 
@@ -143,6 +147,42 @@ function DevServer({ workdir }: { workdir: string }) {
         <button type="button" disabled={!command.trim() || !url.trim()} onClick={() => void saveConfig()}>
           {t({ en: 'Save', fr: 'Enregistrer' })}
         </button>
+      </div>
+      <div className={styles.row}>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            data-testid="dev-hot-reload"
+            checked={hotReload}
+            onChange={(event) => setHotReload(event.target.checked)}
+          />
+          {t({ en: 'Hot reload', fr: 'Rechargement à chaud' })}
+        </label>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            data-testid="dev-disable-inspect"
+            checked={disableInspect}
+            onChange={(event) => setDisableInspect(event.target.checked)}
+          />
+          {t({ en: 'Disable inspect feedback', fr: 'Désactiver le retour d’inspection' })}
+        </label>
+        {status.data?.url && (
+          <a className={styles.link} href={status.data.url} target="_blank" rel="noopener noreferrer">
+            {t({ en: 'Open', fr: 'Ouvrir' })}
+          </a>
+        )}
+        {logs && (
+          <button
+            type="button"
+            data-testid="dev-clear-logs"
+            onClick={() =>
+              void authFetch(`/api/dev-server/clear-logs?${query}`, { method: 'POST' }).then(() => setLogs(''))
+            }
+          >
+            {t({ en: 'Clear logs', fr: 'Effacer les logs' })}
+          </button>
+        )}
       </div>
       {logs && <pre className={styles.log}>{logs}</pre>}
     </section>

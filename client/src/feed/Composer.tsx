@@ -10,19 +10,28 @@ import {
 } from 'react'
 import { Paperclip, Pause, Play, Send, Square, X } from 'lucide-react'
 import type { Attachment } from '@shared/types.js'
-import { launchWorkflow, pauseGeneration, resumeGeneration, runCommand, sendMessage, stopGeneration } from '../actions'
+import {
+  launchWorkflow,
+  pauseGeneration,
+  resumeGeneration,
+  runCommand,
+  sendMessage,
+  stopGeneration,
+  warmCache,
+} from '../actions'
 import { t } from '../i18n'
 import { processFile } from '../lib/file-processing'
 import { PluginActions, PluginZone, usePluginContext } from '../plugins/Slots'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
-import { ComposerBar } from './ComposerBar'
 import type { ParamRequest } from './launch'
-import { MoreButton } from './MoreButton'
 import { trimTailDeletion, useInputHeight } from './useInputHeight'
 import { ParamHint, SuggestionList, useSuggestions } from './useSuggestions'
 import styles from './Feed.module.css'
 
+// The picker and menus pull in Radix Popover: they can arrive just after the input
+const ComposerBar = lazy(() => import('./ComposerBar').then((module) => ({ default: module.ComposerBar })))
+const MoreButton = lazy(() => import('./MoreButton').then((module) => ({ default: module.MoreButton })))
 const QueuedMessages = lazy(() => import('./QueuedMessages'))
 const ParamsDialog = lazy(() => import('./ParamsDialog'))
 
@@ -45,6 +54,10 @@ export function Composer() {
   const input = useRef<HTMLTextAreaElement>(null)
   const filePicker = useRef<HTMLInputElement>(null)
   const height = useInputHeight(input, text)
+  const [focused, setFocused] = useState(false)
+  const warmed = useRef<string | null>(null)
+  const fullscreenOption = useApp((state) => state.display['display.mobileFullscreenComposer'] === 'true')
+  const fullscreen = fullscreenOption && focused && matchMedia('(pointer: coarse)').matches
 
   const running = useApp((state) => state.session?.isRunning === true)
   const pauseState = useApp((state) => state.session?.pauseState ?? 'none')
@@ -139,7 +152,12 @@ export function Composer() {
   }
 
   return (
-    <div className={styles.composerArea} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+    <div
+      className={styles.composerArea}
+      data-fullscreen={fullscreen || undefined}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={onDrop}
+    >
       {hasQueue && (
         <Suspense fallback={null}>
           <QueuedMessages />
@@ -209,6 +227,11 @@ export function Composer() {
             value={text}
             onChange={(event) => {
               const value = trimTailDeletion(text, event.target.value)
+              const open = useApp.getState().session
+              if (value && open?.messageCount === 0 && warmed.current !== open.id) {
+                warmed.current = open.id
+                warmCache()
+              }
               setText(value)
               setCursor(Math.min(event.target.selectionStart, value.length))
               resetSelection()
@@ -216,6 +239,8 @@ export function Composer() {
             onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             placeholder={t({
               en: 'Message the agent…  ( / commands, @ files )',
               fr: 'Message à l’agent…  ( / commandes, @ fichiers )',
@@ -255,16 +280,20 @@ export function Composer() {
           >
             <Send size={16} />
           </button>
-          <MoreButton
-            workdir={workdir}
-            typedText={text}
-            attachments={attachments}
-            clearComposer={clear}
-            askParams={setParamRequest}
-          />
+          <Suspense fallback={<span className={styles.more} />}>
+            <MoreButton
+              workdir={workdir}
+              typedText={text}
+              attachments={attachments}
+              clearComposer={clear}
+              askParams={setParamRequest}
+            />
+          </Suspense>
         </div>
       </form>
-      <ComposerBar />
+      <Suspense fallback={<div className={styles.bar} />}>
+        <ComposerBar />
+      </Suspense>
       {paramRequest && (
         <Suspense fallback={null}>
           <ParamsDialog request={paramRequest} close={() => setParamRequest(null)} />

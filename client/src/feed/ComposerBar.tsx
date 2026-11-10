@@ -1,8 +1,16 @@
 import { lazy, Suspense, useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
-import { ChevronDown } from 'lucide-react'
-import { resetModel, selectModel, setDangerLevel, switchMode } from '../actions'
+import { ChevronDown, Moon, PinOff } from 'lucide-react'
+import {
+  clearEffortPin,
+  resetModel,
+  selectEffort,
+  selectModel,
+  setDangerLevel,
+  setNightMode,
+  switchMode,
+} from '../actions'
 import { t } from '../i18n'
 import { localize } from '../plugins/core'
 import { PluginZone, usePluginContext } from '../plugins/Slots'
@@ -12,10 +20,13 @@ import styles from './Feed.module.css'
 
 const ModelList = lazy(() => import('./ModelList').then((module) => ({ default: module.ModelList })))
 
+const DANGER_LIST_THRESHOLD = 3
+
 function AgentMenu() {
   const agents = useApp((state) => state.agents)
   const mode = useApp((state) => state.session?.mode)
   const current = agents.find((agent) => agent.id === mode)
+  const nightMode = useApp((state) => state.session?.nightMode === true)
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
@@ -23,16 +34,37 @@ function AgentMenu() {
         data-testid="agent-menu"
         style={{ color: current?.color }}
       >
+        {nightMode && <Moon size={12} />}
         {current?.name ?? mode}
         <ChevronDown size={13} />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className={styles.menu} align="start" side="top" sideOffset={6}>
           {agents.map((agent) => (
-            <DropdownMenu.Item key={agent.id} className={styles.menuItem} onSelect={() => void switchMode(agent.id)}>
+            <DropdownMenu.Item
+              key={agent.id}
+              className={styles.menuItem}
+              onSelect={() => void switchMode(agent.id, agent.name)}
+            >
               <span style={{ color: agent.color }}>{agent.name}</span>
             </DropdownMenu.Item>
           ))}
+          <label
+            className={styles.nightToggle}
+            title={t({
+              en: 'The agent runs unattended: questions are answered automatically and confirmations denied.',
+              fr: 'L’agent tourne sans surveillance : les questions reçoivent une réponse automatique et les confirmations sont refusées.',
+            })}
+          >
+            <input
+              type="checkbox"
+              data-testid="night-mode"
+              checked={nightMode}
+              onChange={(event) => void setNightMode(event.target.checked)}
+            />
+            <Moon size={13} />
+            {t({ en: 'Night mode', fr: 'Mode nuit' })}
+          </label>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -42,6 +74,33 @@ function AgentMenu() {
 function DangerToggle() {
   const level = useApp((state) => state.session?.dangerLevel ?? 'normal')
   const pluginLevels = usePlugins((state) => state.contributions.dangerLevels)
+  const listMode = useApp((state) => {
+    const levels = 2 + (pluginLevels?.length ?? 0)
+    const threshold = Number(state.display['display.dangerLevelAutoListThreshold']) || DANGER_LIST_THRESHOLD
+    return (
+      state.display['display.dangerLevelDisplayMode'] === 'list' ||
+      (state.display['display.dangerLevelAutoList'] === 'true' && levels > threshold)
+    )
+  })
+  if (listMode) {
+    return (
+      <select
+        className={styles.reasonList}
+        data-testid="danger-select"
+        aria-label={t({ en: 'Danger level', fr: 'Niveau de risque' })}
+        value={level}
+        onChange={(event) => void setDangerLevel(event.target.value)}
+      >
+        <option value="normal">{t({ en: 'Normal', fr: 'Normal' })}</option>
+        {pluginLevels?.map((option) => (
+          <option key={option.id} value={option.id}>
+            {localize(option.label)}
+          </option>
+        ))}
+        <option value="dangerous">{t({ en: 'Dangerous', fr: 'Dangereux' })}</option>
+      </select>
+    )
+  }
   return (
     <div className={styles.segmented} role="group" aria-label={t({ en: 'Danger level', fr: 'Niveau de risque' })}>
       <button type="button" aria-pressed={level === 'normal'} onClick={() => void setDangerLevel('normal')}>
@@ -81,6 +140,8 @@ function ModelPicker() {
   const [open, setOpen] = useState(false)
   const current = providers.find((provider) => provider.id === providerId)
   const efforts = current?.models.find((model) => model.id === selected)?.reasoningEfforts ?? []
+  const pinned = useApp((state) => state.session?.providerPinnedEffort)
+  const fullHeight = useApp((state) => state.display['display.modelSelectorHeight'] === 'full_height')
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -89,7 +150,13 @@ function ModelPicker() {
         <ChevronDown size={13} />
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className={styles.picker} align="end" side="top" sideOffset={6}>
+        <Popover.Content
+          className={styles.picker}
+          data-height={fullHeight ? 'full' : undefined}
+          align="end"
+          side="top"
+          sideOffset={6}
+        >
           <Suspense fallback={null}>
             <ModelList
               selected={selected ?? undefined}
@@ -128,13 +195,31 @@ function ModelPicker() {
                           data-selected={effort === activeEffort || undefined}
                           onClick={() => {
                             setOpen(false)
-                            void selectModel(current.id, selected!, effort)
+                            void selectEffort(current.id, selected!, effort)
                           }}
                         >
                           {effort}
                         </button>
                       ))}
                     </div>
+                  )}
+                  {pinned && (
+                    <button
+                      type="button"
+                      className={styles.pickerItem}
+                      data-testid="unpin-effort"
+                      title={t({
+                        en: 'Stop pinning the effort so agent overrides and session picks apply again.',
+                        fr: 'Ne plus épingler l’effort : les choix d’agent et de session s’appliquent à nouveau.',
+                      })}
+                      onClick={() => {
+                        setOpen(false)
+                        void clearEffortPin()
+                      }}
+                    >
+                      <PinOff size={12} />
+                      {t({ en: 'Unpin reasoning effort', fr: 'Désépingler l’effort de raisonnement' })}
+                    </button>
                   )}
                   <PluginZone id="model.picker.footer" context={pluginContext} />
                 </>

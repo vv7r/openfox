@@ -117,9 +117,10 @@ interface ListProps {
 }
 
 export function SuggestionList({ suggestions, selected, onPick }: ListProps) {
+  const fullscreen = useApp((state) => state.display['display.fullscreenSlashCommand'] === 'true')
   if (suggestions.length === 0) return null
   return (
-    <ul className={styles.suggestions} data-testid="suggestions">
+    <ul className={styles.suggestions} data-fullscreen={fullscreen || undefined} data-testid="suggestions">
       {suggestions.map((suggestion, index) => (
         <li key={suggestion.id}>
           <button

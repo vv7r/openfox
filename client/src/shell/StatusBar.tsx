@@ -1,3 +1,4 @@
+import { reconnectNow } from '../controller'
 import { GitBranch } from 'lucide-react'
 import { t } from '../i18n'
 import { useApp } from '../store/app'
@@ -52,6 +53,11 @@ export function StatusBar() {
         <span className={styles.connection} data-connected={connected || undefined} />
         {connected ? t({ en: 'Connected', fr: 'Connecté' }) : t({ en: 'Disconnected', fr: 'Déconnecté' })}
       </span>
+      {!connected && (
+        <button type="button" className={styles.updateChip} data-testid="reconnect" onClick={reconnectNow}>
+          {t({ en: 'Reconnect', fr: 'Reconnecter' })}
+        </button>
+      )}
       {version && <span className={styles.statusItem}>{`OpenFox v${version}`}</span>}
     </footer>
   )

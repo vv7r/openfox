@@ -205,6 +205,33 @@
   font-size: 12.5px;
 }
 
+.chatRetry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-top: 1px solid rgb(var(--color-border));
+  background: rgb(var(--color-bg-secondary));
+  color: rgb(var(--color-text-secondary));
+  font-size: 12px;
+}
+
+.chatRetry span {
+  flex: 1;
+  min-width: 0;
+}
+
+.chatRetry button {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 4px;
+  background: rgb(var(--color-bg-tertiary));
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .chatError {
   display: flex;
   align-items: center;

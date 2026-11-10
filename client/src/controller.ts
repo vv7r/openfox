@@ -22,6 +22,8 @@ import { applyCachedLocale, applyLocale } from './i18n'
 import { currentRoute, navigate, subscribeRoute, type Route } from './router'
 import {
   applyAppMessage,
+  confirmationsFromServer,
+  markSessionSeen,
   parseLayout,
   SESSION_DEFAULTS,
   useApp,
@@ -33,7 +35,8 @@ import {
   type QueuedMessage,
   type AppState,
 } from './store/app'
-import { applyServerMessage, resetFeed, setHistory, useFeed } from './store/feed'
+import { applyServerMessage, resetFeed, setHistory, setMaxFeedItems, useFeed } from './store/feed'
+import { setHighlighting } from './markdown/cache'
 import { isWriteCall } from './feed/agentFiles'
 import { hasActiveMcp } from './shell/railStatus'
 import { leaveWorkspace, loadTree, refreshAfterAgentWrite, refreshChangedTabs } from './store/workspace'
@@ -61,6 +64,18 @@ const FEED_DISPLAY_KEYS = [
   'display.collapseLargeToolCalls',
   'display.showOpenInEditorLinks',
   'editor.vscodeRemotePrefix',
+  'display.showSyntaxHighlighting',
+  'display.maxVisibleItems',
+  'display.mobileFullscreenComposer',
+  'display.modelSelectorHeight',
+  'display.collapseProvidersByDefault',
+  'display.collapseFavoritesByDefault',
+  'display.modelFavorites',
+  'display.showProjectsAboveSessions',
+  'display.fullscreenSlashCommand',
+  'display.dangerLevelDisplayMode',
+  'display.dangerLevelAutoList',
+  'display.dangerLevelAutoListThreshold',
 ]
 const RESUME_TIMEOUT_MS = 10_000
 
@@ -98,6 +113,17 @@ function onMessage(message: ServerMessage): void {
     const { autoLaunched, counts, projectId } = message.payload as TasksUpdatePayload
     if (autoLaunched) useApp.setState({ autoLaunched })
     if (projectId === openProjectId) useApp.setState({ runningTasks: counts.running })
+  }
+  if (
+    message.type === 'session.running' &&
+    !(message.payload as { isRunning: boolean }).isRunning &&
+    message.sessionId !== openSessionId &&
+    openProjectId
+  )
+    void refreshConfirmations(openProjectId).catch(() => {})
+  if (message.type === 'session.deletedAll' && message.sessionId === openProjectId) {
+    void loadSessions(message.sessionId)
+    if (openSessionId) navigate(`/p/${message.sessionId}`)
   }
   if (message.type === 'mcp.servers.changed' && openSessionId) void loadMcpStatus(openSessionId).catch(() => {})
   if (message.type === 'devServer.state') {
@@ -231,11 +257,31 @@ async function loadRunningTasks(projectId: string): Promise<void> {
   if (projectId === openProjectId) useApp.setState({ runningTasks: counts.running })
 }
 
+interface SessionsPage {
+  sessions: SessionSummary[]
+  hasMore: boolean
+  pendingConfirmationsBySession?: Record<string, Array<{ callId: string }>>
+}
+
+const fetchSessions = (projectId: string) => getJson<SessionsPage>(`/api/sessions?projectId=${projectId}&limit=50`)
+
 async function loadSessions(projectId: string): Promise<void> {
-  const data = await getJson<{ sessions: SessionSummary[]; hasMore: boolean }>(
-    `/api/sessions?projectId=${projectId}&limit=50`,
-  )
-  if (projectId === openProjectId) useApp.setState({ sessions: data.sessions, sessionsHasMore: data.hasMore })
+  const data = await fetchSessions(projectId)
+  if (projectId !== openProjectId) return
+  useApp.setState({
+    sessions: data.sessions,
+    sessionsHasMore: data.hasMore,
+    confirmationsElsewhere: confirmationsFromServer(data.pendingConfirmationsBySession, openSessionId),
+  })
+}
+
+/** Cancelled confirmations send no event: a finished turn is the cue to ask the server. */
+async function refreshConfirmations(projectId: string): Promise<void> {
+  const data = await fetchSessions(projectId)
+  if (projectId !== openProjectId) return
+  useApp.setState({
+    confirmationsElsewhere: confirmationsFromServer(data.pendingConfirmationsBySession, openSessionId),
+  })
 }
 
 let routeSynced = false
@@ -243,7 +289,7 @@ let routeSynced = false
 function syncRoute(route: Route = currentRoute()): void {
   if (route.projectId !== openProjectId) {
     openProjectId = route.projectId
-    useApp.setState({ sessions: [], runningTasks: 0 })
+    useApp.setState({ sessions: [], runningTasks: 0, confirmationsElsewhere: {} })
     if (route.projectId) {
       void loadSessions(route.projectId)
       void loadRunningTasks(route.projectId).catch(() => {})
@@ -255,7 +301,10 @@ function syncRoute(route: Route = currentRoute()): void {
     historyLoaded = false
     resetFeed(route.sessionId)
     useApp.setState({ ...SESSION_DEFAULTS, mobilePane: 'agent' })
-    if (route.sessionId) void loadSession(route.sessionId)
+    if (route.sessionId) {
+      markSessionSeen(route.sessionId)
+      void loadSession(route.sessionId)
+    }
   }
   const workspace = route.sessionId ?? route.projectId
   if (workspace !== openWorkspace) {
@@ -264,6 +313,11 @@ function syncRoute(route: Route = currentRoute()): void {
     if (workspace) void loadTree('')
   }
   routeSynced = true
+}
+
+function applyFeedDisplay(values: Record<string, string | undefined>): void {
+  setMaxFeedItems(Number(values['display.maxVisibleItems'] ?? 0))
+  setHighlighting(values['display.showSyntaxHighlighting'] !== 'false')
 }
 
 async function loadSettings(): Promise<void> {
@@ -284,6 +338,7 @@ async function loadSettings(): Promise<void> {
     layout: parseLayout(settings[LAYOUT_SETTING]),
     display: Object.fromEntries(FEED_DISPLAY_KEYS.map((key) => [key, settings[key] ?? ''])),
   })
+  applyFeedDisplay(settings)
 }
 
 async function start(): Promise<void> {
@@ -368,10 +423,16 @@ export function revealOpenSession(): void {
   useApp.setState({ mobilePane: 'agent' })
 }
 
-export const unfoldLeftColumn = (): void => setColumns({ left: false, right: useApp.getState().rightCollapsed })
-
 /** The home page lists projects on the left and has no use for the files. */
 export const showHomeColumns = (): void => setColumns({ left: false, right: true })
+
+/** Projects are named in the left panel, which only lists them on the home page. */
+export function startNewProject(): void {
+  showHomeColumns()
+  // After navigating: opening another route puts the phone back on the agent pane
+  navigate('/')
+  useApp.setState({ creatingProject: true, mobilePane: 'project' })
+}
 
 export function setLayout(layout: LayoutMode): void {
   useApp.setState({ layout })
@@ -426,6 +487,8 @@ export function subscribeMessages(listener: MessageListener): () => void {
   return () => messageListeners.delete(listener)
 }
 
+export const reconnectNow = (): void => socket.reconnect()
+
 export function sendOverSocket(type: string, payload: unknown): boolean {
   return socket.send(type as ClientMessageType, payload) !== null
 }
@@ -454,7 +517,10 @@ export async function reloadProjects(): Promise<void> {
 
 export async function saveSetting(key: string, value: string): Promise<void> {
   await sendJson(`/api/settings/${key}`, 'PUT', { value })
-  if (FEED_DISPLAY_KEYS.includes(key)) useApp.setState((state) => ({ display: { ...state.display, [key]: value } }))
+  if (FEED_DISPLAY_KEYS.includes(key)) {
+    useApp.setState((state) => ({ display: { ...state.display, [key]: value } }))
+    applyFeedDisplay(useApp.getState().display)
+  }
 }
 
 export const reloadOpenSession = (): Promise<void> => (openSessionId ? loadSession(openSessionId) : Promise.resolve())

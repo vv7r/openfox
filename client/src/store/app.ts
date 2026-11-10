@@ -1,15 +1,20 @@
 import { create } from 'zustand'
 import type {
   ChatAskUserPayload,
+  ChatLLMRetryFailedPayload,
+  ChatLLMRetryPayload,
   ChatPathConfirmationPayload,
   ChatStatsPayload,
+  ChatVisionFallbackPayload,
   ContextStatePayload,
+  CriteriaUpdatedPayload,
   GitStatusPayload,
   PendingPathConfirmationPayload,
   PendingQuestionPayload,
   QueueStatePayload,
   ServerMessage,
   SessionCreatedPayload,
+  SessionPausePayload,
   SessionRunningPayload,
   SessionStatePayload,
 } from '@shared/protocol.js'
@@ -30,7 +35,19 @@ import type {
 import type { Locale } from '@shared/i18n/index.js'
 import type { DevServerState } from '@shared/dev-server.js'
 
-export type AppDialog = 'update' | 'changelog' | 'new-project'
+export type AppDialog =
+  | 'update'
+  | 'changelog'
+  | { kind: 'project-settings'; projectId: string }
+  | { kind: 'delete-project'; projectId: string; name: string; workdir: string }
+  | { kind: 'permissions'; path: string; retry: () => void }
+  | {
+      kind: 'effort-gate'
+      from?: string | undefined
+      to: string
+      label?: string | undefined
+      resolve: (keep: boolean) => void
+    }
 
 export type LayoutMode = 'editor-first' | 'agent-first'
 export type MobilePane = 'project' | 'agent' | 'workspace'
@@ -58,6 +75,14 @@ export interface AppState {
   questions: PendingQuestionPayload[]
   queue: QueuedMessage[]
   chatError: string | null
+  /** A launch the composer has to run, since it owns the draft and the parameter dialog. */
+  llmRetry: LlmRetry | null
+  /** Keyed `${messageId}-${attachmentId}`. */
+  visionFallbacks: Record<string, ChatVisionFallbackPayload>
+  /** Background sessions with activity the user has not seen. */
+  unreadSessions: string[]
+  /** Call ids waiting for an answer in sessions other than the open one. */
+  confirmationsElsewhere: Record<string, string[]>
   agents: AgentInfo[]
   providers: ProviderInfo[]
   commands: NamedItem[]
@@ -69,6 +94,8 @@ export interface AppState {
   appDialog: AppDialog | null
   /** Folder new projects are created in. */
   projectsRoot: string | null
+  /** The left panel is asking for the name of a new project. */
+  creatingProject: boolean
   agentDialog: AgentDialog | null
   sessionsHasMore: boolean
   execution: WorkflowExecution | null
@@ -91,6 +118,9 @@ export interface UpdateInfo {
   current: string | null
   latest: string | null
 }
+
+export type LlmRetry =
+  { status: 'retrying'; attempt: number; retryInMs: number; error: string } | { status: 'failed'; error: string }
 
 export type AgentDialog = { kind: 'search' } | { kind: 'turn-stats'; stats: MessageStats }
 
@@ -125,10 +155,20 @@ export interface AgentInfo {
 export interface ProviderInfo {
   id: string
   name: string
-  models: Array<{ id: string; reasoningEfforts?: string[]; supportsVision?: boolean }>
+  models: Array<{
+    id: string
+    reasoningEfforts?: string[]
+    supportsVision?: boolean
+    contextWindow?: number
+    reasoningEffortOverride?: string
+    thinkingEnabled?: boolean
+    thinkingLevel?: string
+  }>
   isActive?: boolean
   url?: string
   status?: string
+  backend?: string
+  isLocal?: boolean
 }
 
 export const SESSION_DEFAULTS = {
@@ -141,6 +181,8 @@ export const SESSION_DEFAULTS = {
   questions: [],
   queue: [],
   chatError: null,
+  llmRetry: null,
+  visionFallbacks: {},
   execution: null,
   agentDialog: null,
   mcpActive: false,
@@ -157,6 +199,8 @@ export const useApp = create<AppState>(() => ({
   mobilePane: 'agent',
   projects: [],
   sessions: [],
+  unreadSessions: [],
+  confirmationsElsewhere: {},
   version: null,
   model: null,
   agents: [],
@@ -169,6 +213,7 @@ export const useApp = create<AppState>(() => ({
   update: { status: 'idle', current: null, latest: null },
   appDialog: null,
   projectsRoot: null,
+  creatingProject: false,
   sessionsHasMore: false,
   panel: null,
   display: {},
@@ -191,10 +236,74 @@ function upsertByCallId<T extends { callId: string }>(list: T[], item: T): T[] {
   return [...list.filter((entry) => entry.callId !== item.callId), item]
 }
 
+const BACKGROUND_ACTIVITY = new Set<string>([
+  'chat.message',
+  'chat.done',
+  'chat.error',
+  'chat.progress',
+  'chat.format_retry',
+  'chat.llm_retry',
+  'chat.llm_retry_failed',
+  'chat.vision_fallback',
+  'criteria.updated',
+])
+
+function withoutConfirmations(all: Record<string, string[]>, sessionIds: string[]): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(all).filter(([id]) => !sessionIds.includes(id)))
+}
+
+/** The server's view of what waits in the project's other sessions. */
+export function confirmationsFromServer(
+  pending: Record<string, Array<{ callId: string }>> | undefined,
+  openSessionId: string | null,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries(pending ?? {})
+      .filter(([id, calls]) => id !== openSessionId && calls.length > 0)
+      .map(([id, calls]) => [id, calls.map((call) => call.callId)]),
+  )
+}
+
+function trackElsewhere(state: AppState, message: ServerMessage): void {
+  if (!message.sessionId || state.session?.id === message.sessionId) return
+  const { callId } = message.payload as { callId: string }
+  const current = state.confirmationsElsewhere[message.sessionId] ?? []
+  if (message.type !== 'session.confirmation_resolved') {
+    if (current.includes(callId)) return
+    useApp.setState({
+      confirmationsElsewhere: { ...state.confirmationsElsewhere, [message.sessionId]: [...current, callId] },
+    })
+    return
+  }
+  const { [message.sessionId]: _resolved, ...others } = state.confirmationsElsewhere
+  const remaining = current.filter((id) => id !== callId)
+  useApp.setState({
+    confirmationsElsewhere: remaining.length > 0 ? { ...others, [message.sessionId]: remaining } : others,
+  })
+}
+
+/** Opening a session reads it and answers its confirmations in place. */
+export function markSessionSeen(sessionId: string): void {
+  const state = useApp.getState()
+  const { [sessionId]: _seen, ...others } = state.confirmationsElsewhere
+  useApp.setState({
+    unreadSessions: state.unreadSessions.filter((id) => id !== sessionId),
+    confirmationsElsewhere: others,
+  })
+}
+
 /** The app-level effects of a server event; the feed has its own reducer. */
 export function applyAppMessage(message: ServerMessage): void {
   const state = useApp.getState()
   const isOpen = state.session?.id === message.sessionId
+  if (
+    !isOpen &&
+    message.sessionId &&
+    BACKGROUND_ACTIVITY.has(message.type) &&
+    !state.unreadSessions.includes(message.sessionId)
+  ) {
+    useApp.setState({ unreadSessions: [...state.unreadSessions, message.sessionId] })
+  }
   switch (message.type) {
     case 'session.running': {
       const { isRunning } = message.payload as SessionRunningPayload
@@ -226,7 +335,54 @@ export function applyAppMessage(message: ServerMessage): void {
     }
     case 'session.deleted': {
       const { sessionId } = message.payload as { sessionId: string }
-      useApp.setState({ sessions: state.sessions.filter((s) => s.id !== sessionId) })
+      useApp.setState({
+        sessions: state.sessions.filter((s) => s.id !== sessionId),
+        unreadSessions: state.unreadSessions.filter((id) => id !== sessionId),
+        confirmationsElsewhere: withoutConfirmations(state.confirmationsElsewhere, [sessionId]),
+      })
+      return
+    }
+    case 'session.deletedAll': {
+      // The server sends the project id in the sessionId field for this event
+      const deleted = state.sessions.filter((s) => s.projectId === message.sessionId).map((s) => s.id)
+      useApp.setState({
+        sessions: state.sessions.filter((s) => s.projectId !== message.sessionId),
+        confirmationsElsewhere: withoutConfirmations(state.confirmationsElsewhere, deleted),
+      })
+      return
+    }
+    case 'session.pause': {
+      const { pauseState } = message.payload as SessionPausePayload
+      updateSession(state, message.sessionId, { pauseState })
+      return
+    }
+    case 'criteria.updated': {
+      const { criteria } = message.payload as CriteriaUpdatedPayload
+      updateSession(state, message.sessionId, { criteria })
+      return
+    }
+    case 'chat.llm_retry': {
+      if (!isOpen) return
+      const { attempt, retryInMs, error } = message.payload as ChatLLMRetryPayload
+      useApp.setState({ chatError: null, llmRetry: { status: 'retrying', attempt, retryInMs, error } })
+      return
+    }
+    case 'chat.llm_retry_failed': {
+      if (!isOpen) return
+      const { error } = message.payload as ChatLLMRetryFailedPayload
+      useApp.setState({ chatError: null, llmRetry: { status: 'failed', error } })
+      return
+    }
+    case 'chat.delta':
+    case 'chat.thinking':
+      if (isOpen && state.llmRetry?.status === 'retrying') useApp.setState({ llmRetry: null })
+      return
+    case 'chat.vision_fallback': {
+      if (!isOpen) return
+      const payload = message.payload as ChatVisionFallbackPayload
+      useApp.setState({
+        visionFallbacks: { ...state.visionFallbacks, [`${payload.messageId}-${payload.attachmentId}`]: payload },
+      })
       return
     }
     case 'session.name_generated': {
@@ -249,6 +405,7 @@ export function applyAppMessage(message: ServerMessage): void {
       return
     case 'chat.done': {
       const payload = message.payload as { agentType?: string; reason: string }
+      if (isOpen && payload.reason !== 'error' && state.llmRetry) useApp.setState({ llmRetry: null })
       if (isOpen && !payload.agentType && payload.reason !== 'waiting_for_user') useApp.setState({ liveStats: null })
       return
     }
@@ -275,6 +432,7 @@ export function applyAppMessage(message: ServerMessage): void {
     case 'chat.path_confirmation':
     case 'session.confirmation_pending': {
       const payload = message.payload as ChatPathConfirmationPayload
+      trackElsewhere(state, message)
       if (isOpen)
         useApp.setState({
           confirmations: upsertByCallId(state.confirmations, payload as PendingPathConfirmationPayload),
@@ -283,6 +441,7 @@ export function applyAppMessage(message: ServerMessage): void {
     }
     case 'session.confirmation_resolved': {
       const { callId } = message.payload as { callId: string }
+      trackElsewhere(state, message)
       if (isOpen) useApp.setState({ confirmations: state.confirmations.filter((c) => c.callId !== callId) })
       return
     }

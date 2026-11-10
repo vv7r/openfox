@@ -6,7 +6,7 @@ import { t } from '../i18n'
 import { PluginBadges, PluginZone, usePluginContext } from '../plugins/Slots'
 import { useRoute } from '../router'
 import { useApp } from '../store/app'
-import { ChatError } from './ChatError'
+import { ChatError, ConfirmationsElsewhere } from './ChatError'
 import { Splitter } from './Splitter'
 import { WorkflowBar } from './WorkflowBar'
 import styles from './Shell.module.css'
@@ -15,7 +15,7 @@ const AgentDialogs = lazy(() => import('./AgentDialogs'))
 const Home = lazy(() => import('./Home').then((module) => ({ default: module.Home })))
 
 export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> }) {
-  const { sessionId } = useRoute()
+  const { projectId, sessionId } = useRoute()
   const pluginContext = usePluginContext()
   const mode = useApp((state) => state.session?.mode)
   const title = useApp((state) => state.session?.metadata.title)
@@ -49,6 +49,7 @@ export function AgentPanel({ panes }: { panes: RefObject<HTMLDivElement | null> 
           </button>
         )}
       </div>
+      {projectId && <ConfirmationsElsewhere projectId={projectId} />}
       {sessionId ? (
         <>
           <PluginZone id="session.content" context={pluginContext}>

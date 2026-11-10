@@ -2,6 +2,7 @@ import { gzipSync } from 'node:zlib'
 import path from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 const ENTRY_BUDGET_GZIP_BYTES = 150 * 1024
 
@@ -33,7 +34,37 @@ function entryBudget(): Plugin {
 const backend = process.env['OPENFOX_BACKEND'] ?? 'http://localhost:10370'
 
 export default defineConfig({
-  plugins: [react(), entryBudget()],
+  plugins: [
+    react(),
+    entryBudget(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: {
+        name: 'OpenFox',
+        short_name: 'OpenFox',
+        description: 'Local-LLM-first agentic coding assistant',
+        theme_color: '#2e3440',
+        background_color: '#2e3440',
+        display: 'standalone',
+        icons: [
+          { src: 'assets/openfox-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'assets/openfox-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        ],
+      },
+      workbox: {
+        // Only the shell is precached: hundreds of language grammars must not land on a phone up front
+        globPatterns: ['index.html', 'assets/index-*.{js,css}', '**/*.{png,svg,ico}'],
+        navigateFallbackDenylist: [/^\/api/, /^\/ws/],
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/.+\.(?:js|css|woff2)$/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'openfox-assets', expiration: { maxEntries: 300 } },
+          },
+        ],
+      },
+    }),
+  ],
   resolve: { alias: { '@shared': path.resolve(__dirname, '../src/shared') } },
   worker: { format: 'es' },
   build: { target: 'es2022', sourcemap: false },

@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { createServer as createViteServer, type ViteDevServer } from 'vite'
 
 import type { Config, ModelConfig, ProviderBackend } from '../shared/types.js'
+import { serverT } from './i18n.js'
 import type { ServerHandle } from './context.js'
 import type { VisionBackend } from './llm/vision-fallback.js'
 import { initDatabase } from './db/index.js'
@@ -531,10 +532,31 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   app.delete('/api/projects/:id', async (req, res) => {
-    const { getProject, deleteProject } = await import('./db/projects.js')
+    const { getProject, deleteProject, listProjects } = await import('./db/projects.js')
     const project = getProject(req.params.id)
     if (!project) {
       return res.status(404).json({ error: 'Project not found' })
+    }
+    if (req.query['deleteFiles'] === 'true') {
+      if (sessionManager.listSessions().some((session) => session.projectId === project.id && session.isRunning)) {
+        return res.status(409).json({
+          error: serverT({
+            en: 'A session is still running in this project, stop it before deleting the folder.',
+            fr: 'Une session tourne encore dans ce projet, arrêtez-la avant de supprimer le dossier.',
+          }),
+        })
+      }
+      const { deleteProjectFolder, folderDeletionMessage } = await import('./utils/project-folder.js')
+      const { homedir } = await import('node:os')
+      const result = await deleteProjectFolder(project.workdir, {
+        protectedPaths: [homedir(), configDir, dirname(config.database.path), process.cwd()],
+        otherWorkdirs: listProjects()
+          .filter((other) => other.id !== project.id)
+          .map((other) => other.workdir),
+      })
+      // The project stays listed when its folder survives, so the deletion can be retried
+      if (!result.ok)
+        return res.status(result.reason === 'failed' ? 500 : 400).json({ error: folderDeletionMessage(result) })
     }
     deleteProject(req.params.id)
     res.json({ success: true })

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown } from 'lucide-react'
 import { t } from '../i18n'
+import { useRoute } from '../router'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
 import { deriveItems } from './items'
@@ -15,6 +16,8 @@ const STICK_THRESHOLD_PX = 64
 
 export function Feed() {
   const ids = useFeed((state) => state.ids)
+  const hidden = useFeed((state) => state.hiddenCount)
+  const { projectId, sessionId } = useRoute()
   const sessionLoaded = useApp((state) => state.session !== null)
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
@@ -63,6 +66,23 @@ export function Feed() {
   return (
     <div className={styles.feed}>
       <div ref={scroller} className={styles.scroller} data-testid="chat-scroll-container" onScroll={onScroll}>
+        {hidden > 0 && (
+          <a
+            className={styles.fullHistory}
+            data-testid="full-history"
+            href={`/p/${projectId}/s/${sessionId}/readonly`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t(
+              {
+                en: '{{count}} older items hidden, view the full history',
+                fr: '{{count}} éléments plus anciens masqués, voir l’historique complet',
+              },
+              { count: hidden },
+            )}
+          </a>
+        )}
         {ids.length === 0 && sessionLoaded && (
           <Suspense fallback={null}>
             <UpNext />

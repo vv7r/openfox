@@ -33,19 +33,57 @@ export const useFeed = create<FeedState>(() => ({ sessionId: null, ids: [], byId
 
 const MAX_STREAMED_OUTPUT_CHARS = 256_000
 
+let maxFeedItems = 0
+
+/** 0 keeps everything; a positive value drops the oldest items of the open feed. */
+export function setMaxFeedItems(limit: number): void {
+  maxFeedItems = Number.isFinite(limit) && limit > 0 ? limit : 0
+}
+
+/** The current run locks the files it wrote, and a streaming message still receives deltas. */
+function firstProtected({ ids, byId }: Pick<FeedState, 'ids' | 'byId'>): number {
+  let first = ids.length
+  let runStartFound = false
+  for (let index = ids.length - 1; index >= 0; index--) {
+    const message = byId[ids[index]!]
+    if (message?.isStreaming) first = index
+    if (!runStartFound && message?.role === 'user' && !message.isSystemGenerated) {
+      first = Math.min(first, index)
+      runStartFound = true
+    }
+  }
+  return first
+}
+
+function trimmed(
+  state: Pick<FeedState, 'ids' | 'byId' | 'hiddenCount'>,
+): Pick<FeedState, 'ids' | 'byId' | 'hiddenCount'> {
+  if (maxFeedItems === 0 || state.ids.length <= maxFeedItems) return state
+  const cut = Math.min(state.ids.length - maxFeedItems, firstProtected(state))
+  if (cut === 0) return state
+  const byId = { ...state.byId }
+  state.ids.slice(0, cut).forEach((id) => delete byId[id])
+  return { ids: state.ids.slice(cut), byId, hiddenCount: state.hiddenCount + cut }
+}
+
 /** Empties the feed for a session whose history is still loading. */
 export function resetFeed(sessionId: string | null): void {
   clearDeltas()
   useFeed.setState({ sessionId, ids: [], byId: {}, hiddenCount: 0 })
 }
 
-export function setHistory(sessionId: string, messages: Message[], hiddenCount = 0): void {
-  useFeed.setState({
-    sessionId,
+export function setHistory(
+  sessionId: string,
+  messages: Message[],
+  hiddenCount = 0,
+  options: { keepAll?: boolean } = {},
+): void {
+  const history = {
     ids: messages.map((message) => message.id),
     byId: Object.fromEntries(messages.map((message) => [message.id, message])),
     hiddenCount,
-  })
+  }
+  useFeed.setState({ sessionId, ...(options.keepAll ? history : trimmed(history)) })
 }
 
 function appendOutput(toolCall: ToolCall, chunks: ToolChunk[]): ToolCall {
@@ -170,10 +208,13 @@ export function applyServerMessage(message: ServerMessage): void {
     case 'chat.message': {
       const payload = message.payload as ChatMessagePayload
       if (state.byId[payload.message.id]) return
-      useFeed.setState({
-        ids: [...state.ids, payload.message.id],
-        byId: { ...state.byId, [payload.message.id]: payload.message },
-      })
+      useFeed.setState(
+        trimmed({
+          ids: [...state.ids, payload.message.id],
+          byId: { ...state.byId, [payload.message.id]: payload.message },
+          hiddenCount: state.hiddenCount,
+        }),
+      )
       return
     }
     case 'chat.delta': {

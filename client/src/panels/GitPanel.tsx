@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { getJson, sendJson } from '../api'
 import { reloadOpenSession } from '../controller'
 import { useLoad } from '../hooks'
 import { t } from '../i18n'
+import { PluginZone, usePluginContext } from '../plugins/Slots'
 import { useApp } from '../store/app'
 import styles from './Panels.module.css'
 
@@ -16,7 +17,41 @@ interface Workspace {
   path?: string
 }
 
-export function GitPanel() {
+function DeleteWorkspace({ onDelete }: { onDelete: (force: boolean) => Promise<string[] | null> }) {
+  const [confirming, setConfirming] = useState(false)
+  const [conflicts, setConflicts] = useState<string[] | null>(null)
+  if (!confirming) {
+    return (
+      <button type="button" data-testid="workspace-delete" onClick={() => setConfirming(true)}>
+        {t({ en: 'Delete', fr: 'Supprimer' })}
+      </button>
+    )
+  }
+  const run = (force: boolean) =>
+    void onDelete(force).then((found) => {
+      setConflicts(found)
+      if (!found) setConfirming(false)
+    })
+  return (
+    <>
+      {conflicts && (
+        <span className={styles.error} title={conflicts.join(', ')}>
+          {t({ en: 'Used by other sessions', fr: 'Utilisé par d’autres sessions' })}
+        </span>
+      )}
+      <button type="button" data-testid="workspace-delete-confirm" onClick={() => run(conflicts !== null)}>
+        {conflicts
+          ? t({ en: 'Force delete, switching them to original', fr: 'Forcer, en les basculant sur l’original' })
+          : t({ en: 'Confirm', fr: 'Confirmer' })}
+      </button>
+      <button type="button" onClick={() => setConfirming(false)}>
+        {t({ en: 'Cancel', fr: 'Annuler' })}
+      </button>
+    </>
+  )
+}
+
+function GitPanelBody() {
   const sessionId = useApp((state) => state.session?.id)
   const projectId = useApp((state) => state.session?.projectId)
   const workspace = useApp((state) => state.session?.workspace)
@@ -24,6 +59,8 @@ export function GitPanel() {
   const [name, setName] = useState('')
   const [workspaceName, setWorkspaceName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [source, setSource] = useState('')
   const { data, reload } = useLoad(() => getJson<Branches>(`/api/sessions/${sessionId}/branches`), sessionId ?? '')
   const workspaces = useLoad(
     () => getJson<Workspace[] | { workspaces: Workspace[] }>(`/api/projects/${projectId}/workspaces`),
@@ -46,6 +83,22 @@ export function GitPanel() {
     workspaces.reload()
   }
 
+  const needle = search.trim().toLowerCase()
+  const branches = data?.branches.filter((branch) => branch.name.toLowerCase().includes(needle))
+
+  const deleteWorkspace = async (target: string, force: boolean): Promise<string[] | null> => {
+    setError(null)
+    const response = await sendJson(`/api/sessions/${sessionId}/delete-workspace`, 'POST', { target, force })
+    if (!response.ok) {
+      const failure = (await response.json().catch(() => ({}))) as { error?: string; conflictingSessionIds?: string[] }
+      setError(failure.error ?? t({ en: 'Failed to delete workspace', fr: 'Échec de la suppression de l’espace' }))
+      return failure.conflictingSessionIds ?? null
+    }
+    await reloadOpenSession()
+    workspaces.reload()
+    return null
+  }
+
   return (
     <div className={styles.stack}>
       {error && <p className={styles.error}>{error}</p>}
@@ -55,7 +108,10 @@ export function GitPanel() {
           className={styles.row}
           onSubmit={(event) => {
             event.preventDefault()
-            if (name.trim()) void run('checkout-new', { name: name.trim() }).then(() => setName(''))
+            if (name.trim())
+              void run('checkout-new', { name: name.trim(), ...(source ? { sourceBranch: source } : {}) }).then(() =>
+                setName(''),
+              )
           }}
         >
           <input
@@ -64,12 +120,38 @@ export function GitPanel() {
             onChange={(event) => setName(event.target.value)}
             placeholder={t({ en: 'New branch', fr: 'Nouvelle branche' })}
           />
+          <select
+            className={styles.select}
+            aria-label={t({ en: 'From branch', fr: 'Depuis la branche' })}
+            data-testid="branch-source"
+            value={source}
+            onChange={(event) => setSource(event.target.value)}
+          >
+            <option value="">
+              {t({ en: 'From {{branch}}', fr: 'Depuis {{branch}}' }, { branch: data?.defaultBranch ?? '' })}
+            </option>
+            {data?.branches.map((branch) => (
+              <option key={branch.name} value={branch.name}>
+                {branch.name}
+              </option>
+            ))}
+          </select>
           <button type="submit" className={styles.primary}>
             {t({ en: 'Create', fr: 'Créer' })}
           </button>
         </form>
+        <input
+          className={styles.input}
+          data-testid="branch-search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={t({ en: 'Search branches…', fr: 'Rechercher des branches…' })}
+        />
         <ul className={styles.list}>
-          {data?.branches.map((branch) => (
+          {branches?.length === 0 && (
+            <li className={styles.muted}>{t({ en: 'No branches match', fr: 'Aucune branche ne correspond' })}</li>
+          )}
+          {branches?.map((branch) => (
             <li key={branch.name}>
               <span className={styles.grow}>{branch.name}</span>
               {branch.name === currentBranch ? (
@@ -120,10 +202,22 @@ export function GitPanel() {
               <button type="button" onClick={() => void run('switch-workspace', { target: item.name })}>
                 {t({ en: 'Switch', fr: 'Basculer' })}
               </button>
+              <DeleteWorkspace onDelete={(force) => deleteWorkspace(item.name, force)} />
             </li>
           ))}
         </ul>
       </section>
     </div>
+  )
+}
+
+export function GitPanel() {
+  const pluginContext = usePluginContext()
+  const branch = useApp((state) => state.git?.branch)
+  const context = useMemo(() => ({ ...pluginContext, branch }), [pluginContext, branch])
+  return (
+    <PluginZone id="session.sidebar.git" context={context}>
+      <GitPanelBody />
+    </PluginZone>
   )
 }

@@ -8,6 +8,13 @@ import type {
 } from '@shared/types.js'
 import { authFetch, getJson, sendJson } from './api'
 import { reloadProjects, reloadSessions, sendOverSocket } from './controller'
+import {
+  effectiveEffort,
+  effortModelRef,
+  modelDefaultEffort,
+  overrideEffort,
+  shouldGateEffort,
+} from './feed/effortGate'
 import { fillTemplate, templateParams } from './feed/launch'
 import { navigate } from './router'
 import { setHistory } from './store/feed'
@@ -51,7 +58,82 @@ async function putAndApply(path: string, body: unknown): Promise<void> {
   if (data.session && data.messages) setHistory(data.session.id, data.messages, data.hiddenCount ?? 0)
 }
 
-export const switchMode = (mode: string) => putAndApply('mode', { mode })
+const askEffortGate = (from: string | undefined, to: string, label?: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    useApp.setState({
+      appDialog: {
+        kind: 'effort-gate',
+        from,
+        to,
+        label,
+        resolve: (keep) => {
+          useApp.setState({ appDialog: null })
+          resolve(keep)
+        },
+      },
+    })
+  })
+
+function currentModelDefault(agentOverride: string | undefined): string | undefined {
+  const { session, providers, model } = useApp.getState()
+  const target = effortModelRef(session, agentOverride)
+  const provider = providers.find((item) => item.id === target.providerId) ?? providers.find((item) => item.isActive)
+  return modelDefaultEffort(provider?.models.find((item) => item.id === (target.model ?? model)))
+}
+
+function applySession(data: {
+  session?: Session
+  messages?: Parameters<typeof setHistory>[1]
+  hiddenCount?: number
+}): void {
+  if (!data.session) return
+  useApp.setState({ session: data.session })
+  if (data.messages) setHistory(data.session.id, data.messages, data.hiddenCount ?? 0)
+}
+
+export async function pinEffort(effort: string): Promise<void> {
+  const response = await post('pin-effort', { effort })
+  if (response?.ok) applySession((await response.json()) as SessionUpdate)
+}
+
+export async function clearEffortPin(): Promise<void> {
+  const url = sessionUrl('pin-effort')
+  if (!url) return
+  const response = await authFetch(url, { method: 'DELETE' })
+  if (response.ok) applySession((await response.json()) as SessionUpdate)
+}
+
+export const setNightMode = (nightMode: boolean) => putAndApply('night-mode', { nightMode })
+
+/** Fills the LLM cache on the first keystroke of an empty session. */
+export function warmCache(): void {
+  void post('warmup').catch(() => {})
+}
+
+async function loadAgentOverrides(): Promise<Record<string, string>> {
+  const workdir = useApp.getState().session?.workdir
+  if (!workdir) return {}
+  const data = await getJson<{ modelOverrides?: Record<string, string> }>(
+    `/api/agents?workdir=${encodeURIComponent(workdir)}`,
+  )
+  return data.modelOverrides ?? {}
+}
+
+/** On a warm cache an agent with another effort needs a choice first. */
+export async function switchMode(mode: string, label?: string): Promise<void> {
+  const { session, context } = useApp.getState()
+  const overrides = await loadAgentOverrides().catch((): Record<string, string> => ({}))
+  const activeOverride = overrides[session?.mode ?? '']
+  const current = effectiveEffort(session, overrideEffort(activeOverride), currentModelDefault(activeOverride))
+  const next =
+    overrideEffort(overrides[mode]) ?? effectiveEffort(session, undefined, currentModelDefault(overrides[mode]))
+  if (next && shouldGateEffort(context?.warmCache, current, next)) {
+    if (await askEffortGate(current, next, label)) await pinEffort(current!)
+    else await clearEffortPin()
+  }
+  await putAndApply('mode', { mode })
+}
+
 export const setDangerLevel = (dangerLevel: DangerLevel) => putAndApply('danger-level', { dangerLevel })
 export const stopGeneration = () => post('stop')
 export const continueGeneration = () => post('continue')
@@ -78,6 +160,17 @@ interface ProviderResponse {
 }
 
 /** Applies a provider change; the server answers with the session, possibly reshaped. */
+/** An effort picked on a warm cache can be declined, which keeps the current one. */
+export async function selectEffort(providerId: string, model: string, effort: string): Promise<void> {
+  const { session, context } = useApp.getState()
+  const overrides = await loadAgentOverrides().catch((): Record<string, string> => ({}))
+  const activeOverride = overrides[session?.mode ?? '']
+  const current = effectiveEffort(session, overrideEffort(activeOverride), currentModelDefault(activeOverride))
+  if (shouldGateEffort(context?.warmCache, current, effort) && (await askEffortGate(current, effort))) return
+  if (session?.providerPinnedEffort) await clearEffortPin()
+  await selectModel(providerId, model, effort)
+}
+
 export async function selectModel(providerId: string, model: string, reasoningEffort?: string): Promise<void> {
   const response = await post('provider', { providerId, model, ...(reasoningEffort ? { reasoningEffort } : {}) })
   if (!response?.ok) return
@@ -156,7 +249,23 @@ export function continueWorkflow(execution: WorkflowExecution, userChoice?: stri
 }
 
 export const exitWorkflow = () => sendOverSocket('workflow.exit', withSession({}))
-export const retryLastTurn = () => sendOverSocket('chat.retry', withSession({}))
+
+/** Skips the rest of the backoff wait; the server retries immediately. */
+export function retryLlmNow(): void {
+  sendOverSocket('chat.llm_retry_now', withSession({}))
+  useApp.setState({ llmRetry: null })
+}
+
+/** A blocked workflow step resumes through its runner, a plain chat re-runs the last turn. */
+export function retryAfterFailure(): void {
+  const { execution, session } = useApp.getState()
+  useApp.setState({ llmRetry: null, chatError: null })
+  if (execution?.status === 'blocked' && execution.currentStepId && !session?.isRunning) {
+    continueWorkflow(execution)
+    return
+  }
+  sendOverSocket('chat.retry', withSession({}))
+}
 
 export async function loadCommand(
   commandId: string,
@@ -226,9 +335,44 @@ export async function importSession(projectId: string, file: File): Promise<bool
   }
 }
 
+export async function deleteAllSessions(projectId: string): Promise<void> {
+  await authFetch(`/api/projects/${projectId}/sessions`, { method: 'DELETE' })
+  if (useApp.getState().session?.projectId === projectId) navigate(`/p/${projectId}`)
+  await reloadSessions()
+}
+
+/** Resolves with the reason it failed, or null once the project is gone. */
+export async function deleteProject(projectId: string, deleteFiles: boolean): Promise<string | null> {
+  const response = await authFetch(`/api/projects/${projectId}${deleteFiles ? '?deleteFiles=true' : ''}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) return ((await response.json()) as { error?: string }).error ?? 'error'
+  await reloadProjects()
+  if (location.pathname.startsWith(`/p/${projectId}`)) navigate('/')
+  return null
+}
+
+export async function toggleProjectStar(projectId: string, isStarred: boolean): Promise<void> {
+  await sendJson(`/api/projects/${projectId}/star`, 'PUT', { isStarred })
+  await reloadProjects()
+}
+
+/** Opens the system file manager on the machine running the server. */
+export const openProjectFolder = (projectId: string) =>
+  authFetch(`/api/projects/${projectId}/open-folder`).catch(() => {})
+
 export async function openProject(name: string, workdir: string): Promise<string | null> {
   const response = await sendJson('/api/projects', 'POST', { name, workdir })
-  if (!response.ok) return ((await response.json()) as { error?: string }).error ?? 'error'
+  if (!response.ok) {
+    const data = (await response.json()) as { error?: string; code?: string; path?: string }
+    if (data.code === 'EACCES') {
+      useApp.setState({
+        appDialog: { kind: 'permissions', path: data.path ?? workdir, retry: () => void openProject(name, workdir) },
+      })
+      return null
+    }
+    return data.error ?? 'error'
+  }
   const { project } = (await response.json()) as { project: { id: string } }
   await reloadProjects()
   navigate(`/p/${project.id}`)

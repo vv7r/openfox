@@ -11,9 +11,10 @@ script_dir=$(dirname "$0")/..
 
 echo "  Running checks..."
 
+# Fork: the test suites run on GitHub (.github/workflows/ci.yml), the hook keeps the fast checks
 parallel_exit_on_failure \
   "lint"      "npm run lint" \
   "typecheck" "npm run typecheck" \
+  "client"    "cd client && npx tsc --noEmit" \
   "format"    "npm run format" \
-  "duplicate" "npm run duplicate" \
-  "test"      "npm test"
+  "duplicate" "npm run duplicate"

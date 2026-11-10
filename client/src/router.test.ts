@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { parseRoute } from './router'
+import { parseRoute, readonlySessionId } from './router'
+
+describe('readonlySessionId', () => {
+  it('only matches the read-only route', () => {
+    expect(readonlySessionId('/p/a/s/b/readonly')).toBe('b')
+    expect(readonlySessionId('/p/a/s/b')).toBeNull()
+  })
+})
 
 describe('parseRoute', () => {
   it('reads project and session ids', () => {

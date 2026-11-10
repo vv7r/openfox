@@ -7,6 +7,12 @@ type Listener = (html: string) => void
 // Insertion order doubles as eviction order, so scrolling back through a
 // virtualized feed finds its blocks already parsed.
 const cache = new Map<string, string>()
+let highlighting = true
+
+/** Applies to blocks not rendered yet; what is cached keeps its colours until reloaded. */
+export function setHighlighting(enabled: boolean): void {
+  highlighting = enabled
+}
 const pending = new Map<string, Listener[]>()
 const sourceById = new Map<number, string>()
 let nextId = 0
@@ -37,7 +43,7 @@ function request(source: string, listener: Listener): void {
   pending.set(source, [listener])
   const id = nextId++
   sourceById.set(id, source)
-  getWorker().postMessage({ id, source })
+  getWorker().postMessage({ id, source, highlight: highlighting })
 }
 
 /** The block's HTML, or null while the worker has not produced it yet. */
