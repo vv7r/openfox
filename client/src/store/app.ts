@@ -11,6 +11,7 @@ import type {
   GitStatusPayload,
   PendingPathConfirmationPayload,
   PendingQuestionPayload,
+  ProjectListPayload,
   QueueStatePayload,
   ServerMessage,
   SessionCreatedPayload,
@@ -327,6 +328,11 @@ export function applyAppMessage(message: ServerMessage): void {
         ...(payload.sessionStats ? { stats: payload.sessionStats } : {}),
         liveStats: null,
       })
+      return
+    }
+    case 'project.list': {
+      const { projects } = message.payload as ProjectListPayload
+      useApp.setState({ projects })
       return
     }
     case 'session.created': {

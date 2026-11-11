@@ -35,6 +35,12 @@ describe('applyAppMessage', () => {
     expect(useApp.getState().git?.branch).toBe('y')
   })
 
+  it('takes the project list the server sends after another client changed it', () => {
+    useApp.setState({ projects: [{ id: 'old', name: 'Old' }] as never })
+    applyAppMessage(server('project.list', { projects: [{ id: 'new', name: 'New' }] }))
+    expect(useApp.getState().projects.map((p) => p.id)).toEqual(['new'])
+  })
+
   it('adds a created session once, and removes a deleted one', () => {
     const created = server('session.created', { session: summary('c') })
     applyAppMessage(created)

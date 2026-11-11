@@ -421,6 +421,12 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
   })
 
   // Project endpoints (REST)
+  // Every client gets the whole list, so a project changed elsewhere never leaves one stale
+  const broadcastProjects = async () => {
+    const { listProjects } = await import('./db/projects.js')
+    wssExports.broadcastAll(createServerMessage('project.list', { projects: listProjects() }))
+  }
+
   app.get('/api/projects', async (_req, res) => {
     const { listProjects } = await import('./db/projects.js')
     const projects = listProjects()
@@ -438,6 +444,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     try {
       const project = await createProjectDirectory(name, workdir, globalConfig.workspace?.autoGitInit ?? true)
       res.status(201).json({ project })
+      void broadcastProjects()
     } catch (err) {
       const eaccError = err as Error & { code?: string; cause?: unknown }
       return res.status(403).json({
@@ -529,6 +536,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Project not found' })
     }
     res.json({ project: updated })
+    void broadcastProjects()
   })
 
   app.delete('/api/projects/:id', async (req, res) => {
@@ -560,6 +568,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
     }
     deleteProject(req.params.id)
     res.json({ success: true })
+    void broadcastProjects()
   })
 
   app.put('/api/projects/:id/star', async (req, res) => {
@@ -573,6 +582,7 @@ export async function createServerHandle(config: Config): Promise<ServerHandle> 
       return res.status(404).json({ error: 'Project not found' })
     }
     res.json({ project })
+    void broadcastProjects()
   })
 
   const sessionFavoriteRouter = express.Router()
