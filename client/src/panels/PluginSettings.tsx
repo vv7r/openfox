@@ -240,8 +240,13 @@ export function PluginSettingsForm({ pluginId }: { pluginId: string }) {
         return (
           <div key={field.key} className={styles.field}>
             {field.section && <h4 className={styles.eyebrow}>{localize(field.section)}</h4>}
-            {field.type !== 'button' && <span>{localize(field.label)}</span>}
-            {field.type === 'status' ? (
+            {field.type !== 'button' && field.type !== 'boolean' && <span>{localize(field.label)}</span>}
+            {field.type === 'boolean' ? (
+              <label className={styles.checkRow}>
+                <Input field={field} value={values[field.key]} onChange={set} context={values} />
+                {localize(field.label)}
+              </label>
+            ) : field.type === 'status' ? (
               <span className={styles.row}>
                 <span
                   className={styles.dot}
