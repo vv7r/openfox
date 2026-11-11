@@ -70,3 +70,6 @@ worktrees/
 /plugins/
 # Mobile perf bench results (npm run perf)
 perf-results/
+
+# graphify code knowledge graph (local, rebuilt from the code)
+graphify-out/
