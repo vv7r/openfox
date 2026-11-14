@@ -1211,7 +1211,7 @@ button.toolHeader {
 }
 
 /* Copy and time on each feed block */
-.block,
+.messageBlock,
 .tool {
   position: relative;
 }
@@ -1239,7 +1239,7 @@ button.toolHeader {
   padding-right: 32px;
 }
 
-.block:hover > .blockCopy,
+.messageBlock:hover > .blockCopy,
 .tool:hover > .blockCopy,
 .blockCopy:focus-visible {
   opacity: 1;
@@ -1277,4 +1277,18 @@ button.toolHeader {
 .userRow > .stamp {
   align-self: center;
   margin: 0;
+}
+
+.codeCopy {
+  float: right;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.codeCopy:hover {
+  color: rgb(var(--color-text-primary));
 }

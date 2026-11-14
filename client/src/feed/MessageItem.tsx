@@ -40,7 +40,30 @@ function useCodeFolding(source: string, html: string | null) {
       else foldedCode.add(keyOf(details))
     }
     element.addEventListener('toggle', onToggle, true)
-    return () => element.removeEventListener('toggle', onToggle, true)
+    // Copy button in each code block header (the HTML comes from the markdown worker)
+    element.querySelectorAll('details > summary').forEach((summary) => {
+      if (summary.querySelector('button')) return
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = styles.codeCopy!
+      button.textContent = t({ en: 'Copy', fr: 'Copier' })
+      summary.append(button)
+    })
+    const onClick = (event: MouseEvent) => {
+      const button = (event.target as Element).closest(`button.${styles.codeCopy}`)
+      if (!button) return
+      event.preventDefault() // a click in <summary> would fold the block
+      const code = button.closest('details')?.querySelector('pre')?.textContent ?? ''
+      void copyToClipboard(code).then(() => {
+        button.textContent = t({ en: 'Copied', fr: 'Copié' })
+        setTimeout(() => (button.textContent = t({ en: 'Copy', fr: 'Copier' })), 1500)
+      })
+    }
+    element.addEventListener('click', onClick)
+    return () => {
+      element.removeEventListener('toggle', onToggle, true)
+      element.removeEventListener('click', onClick)
+    }
   }, [source, html])
   return host
 }
@@ -155,7 +178,7 @@ function Assistant({ message }: { message: Message }) {
   const showStats = useApp((state) => state.display['display.showStats'] !== 'false')
   const streaming = message.isStreaming === true
   return (
-    <div className={styles.block}>
+    <div className={styles.messageBlock}>
       <Stamp timestamp={message.timestamp} />
       {message.content.trim() && !streaming && <CopyButton className={styles.blockCopy} text={message.content} />}
       {thinking && (
@@ -244,7 +267,7 @@ function Other({ message }: { message: Message }) {
   }
   if (message.role === 'system')
     return (
-      <div className={styles.block}>
+      <div className={styles.messageBlock}>
         <Stamp timestamp={message.timestamp} />
         <CopyButton className={styles.blockCopy} text={message.content} />
         <div className={styles.system}>{message.content}</div>
@@ -253,7 +276,7 @@ function Other({ message }: { message: Message }) {
   if (message.isSystemGenerated) {
     const text = readableReminder(message.content)
     return (
-      <div className={styles.block}>
+      <div className={styles.messageBlock}>
         <Stamp timestamp={message.timestamp} />
         <CopyButton className={styles.blockCopy} text={text} />
         <div className={styles.user} data-system>
