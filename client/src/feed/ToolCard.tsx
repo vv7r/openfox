@@ -7,6 +7,7 @@ import { t } from '../i18n'
 import { formatToolArgsWithMetadata, splitToolName } from '../lib/formatToolArgs'
 import { deriveToolCallStatus, type ToolStatus } from '../lib/toolStatus'
 import { useApp } from '../store/app'
+import { CopyButton } from './BlockMeta'
 import { useToolViews } from './tools/loader'
 import styles from './Feed.module.css'
 
@@ -133,6 +134,11 @@ function Todos({ call }: { call: ToolCall }) {
   )
 }
 
+const toolCallText = (call: ToolCall): string =>
+  [`${call.name} ${JSON.stringify(call.arguments, null, 2)}`, call.result?.output ?? call.result?.error ?? '']
+    .filter(Boolean)
+    .join('\n\n')
+
 export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
   const status = deriveToolCallStatus(call.result)
   const hasConfirmation = useApp((state) =>
@@ -179,6 +185,7 @@ export const ToolCard = memo(function ToolCard({ call }: { call: ToolCall }) {
         <span className={styles.toolArgs}>{label}</span>
         {call.result && <span className={styles.toolDuration}>{`${(call.result.durationMs / 1000).toFixed(1)}s`}</span>}
       </button>
+      <CopyButton className={styles.blockCopy} text={toolCallText(call)} />
       {expanded && (
         <>
           {views && <views.ToolDetails call={call} status={status} remote={remote} />}

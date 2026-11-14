@@ -4,15 +4,16 @@ import type { Message } from '@shared/types.js'
 import { forkAt, replayMessage } from '../actions'
 import { t } from '../i18n'
 import { copyToClipboard } from '../lib/clipboard'
-import { formatTime } from '../lib/format-stats'
+import { formatTenths, formatTime } from '../lib/format-stats'
 import { PluginActions, usePluginContext } from '../plugins/Slots'
 import { scanBlocks } from '../markdown/blocks'
 import { useMarkdownHtml } from '../markdown/cache'
 import { useApp } from '../store/app'
 import { useFeed } from '../store/feed'
+import { CopyButton, Stamp } from './BlockMeta'
 import { toElements } from './elements'
 import type { FeedItem } from './items'
-import { forgetThinking, thinkingSeconds } from './thinkingClock'
+import { stopThinking, thinkingDuration, thinkingSeconds } from './thinkingClock'
 import { CriteriaCard, PreparingCard, ToolCard } from './ToolCard'
 import { readableReminder } from './systemText'
 import styles from './Feed.module.css'
@@ -73,7 +74,8 @@ export function Markdown({ text, streaming }: { text: string; streaming: boolean
   )
 }
 
-const THINKING_TICK_MS = 1000
+// One decimal on screen: tick every tenth of a second (only this span re-renders)
+const THINKING_TICK_MS = 100
 
 /** Ticks on its own so that a running clock never re-renders the message. */
 function ThinkingClock({ messageId }: { messageId: string }) {
@@ -86,7 +88,7 @@ function ThinkingClock({ messageId }: { messageId: string }) {
     <span data-testid="thinking-clock">
       {t(
         { en: 'Thinking… ({{time}})', fr: 'Réflexion… ({{time}})' },
-        { time: formatTime(thinkingSeconds(messageId, now), false) },
+        { time: formatTenths(thinkingSeconds(messageId, now)) },
       )}
     </span>
   )
@@ -105,12 +107,14 @@ function Thinking({
 }) {
   const [open, setOpen] = useState(useApp.getState().display['display.showThinking'] === 'true')
   useEffect(() => {
-    if (!active) forgetThinking(messageId)
+    if (!active) stopThinking(messageId, Date.now())
   }, [active, messageId])
+  // The server's figure arrives with the message stats; until then (or without it) keep the clock's
+  const seconds = duration ?? (active ? undefined : thinkingDuration(messageId))
   const label = active ? (
     <ThinkingClock messageId={messageId} />
-  ) : duration ? (
-    t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTime(duration) })
+  ) : seconds !== undefined ? (
+    t({ en: 'Thought for {{time}}', fr: 'A réfléchi pendant {{time}}' }, { time: formatTenths(seconds) })
   ) : (
     t({ en: 'Thought', fr: 'A réfléchi' })
   )
@@ -119,6 +123,7 @@ function Thinking({
       <button type="button" onClick={() => setOpen(!open)}>
         {label}
       </button>
+      {open && <CopyButton text={text} />}
       {open && <div className={styles.thinkingText}>{text}</div>}
     </div>
   )
@@ -150,7 +155,9 @@ function Assistant({ message }: { message: Message }) {
   const showStats = useApp((state) => state.display['display.showStats'] !== 'false')
   const streaming = message.isStreaming === true
   return (
-    <>
+    <div className={styles.block}>
+      <Stamp timestamp={message.timestamp} />
+      {message.content.trim() && !streaming && <CopyButton className={styles.blockCopy} text={message.content} />}
       {thinking && (
         <Thinking
           messageId={message.id}
@@ -179,7 +186,7 @@ function Assistant({ message }: { message: Message }) {
           })}
         </div>
       )}
-    </>
+    </div>
   )
 }
 
@@ -190,10 +197,12 @@ function AutoPrompt({ message }: { message: Message }) {
     metadata?.kind === 'reminder' ? t({ en: 'reminder', fr: 'rappel' }) : t({ en: 'instructions', fr: 'instructions' })
   return (
     <div className={styles.autoPrompt}>
+      <Stamp timestamp={message.timestamp} />
       <button type="button" onClick={() => setOpen(!open)}>
         <span className={styles.autoPromptDot} style={{ background: metadata?.color ?? 'currentColor' }} />
         <span>{`${metadata?.name ?? t({ en: 'Agent', fr: 'Agent' })} · ${kind}`}</span>
       </button>
+      <CopyButton text={readableReminder(message.content)} />
       {open && (
         <div className={styles.autoPromptBody}>
           <Markdown text={readableReminder(message.content)} streaming={false} />
@@ -233,11 +242,23 @@ function Other({ message }: { message: Message }) {
     if (card)
       return <div className={styles.divider}>{card.summary ?? t({ en: 'Task completed', fr: 'Tâche terminée' })}</div>
   }
-  if (message.role === 'system') return <div className={styles.system}>{message.content}</div>
-  if (message.isSystemGenerated) {
+  if (message.role === 'system')
     return (
-      <div className={styles.user} data-system>
-        {readableReminder(message.content)}
+      <div className={styles.block}>
+        <Stamp timestamp={message.timestamp} />
+        <CopyButton className={styles.blockCopy} text={message.content} />
+        <div className={styles.system}>{message.content}</div>
+      </div>
+    )
+  if (message.isSystemGenerated) {
+    const text = readableReminder(message.content)
+    return (
+      <div className={styles.block}>
+        <Stamp timestamp={message.timestamp} />
+        <CopyButton className={styles.blockCopy} text={text} />
+        <div className={styles.user} data-system>
+          {text}
+        </div>
       </div>
     )
   }
@@ -278,6 +299,7 @@ function UserMessage({ message }: { message: Message }) {
 
   return (
     <div className={styles.userRow}>
+      <Stamp timestamp={message.timestamp} />
       <div className={styles.messageActions}>
         <button
           type="button"

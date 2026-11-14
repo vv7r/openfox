@@ -54,3 +54,14 @@ export function formatTime(seconds: number, decimals = true): string {
   const secs = rem % 60
   return `${hours}h ${mins}m ${secs}s`
 }
+
+/** Duration with one decimal of seconds at every scale: 12.3s, 1m 05.2s, 1h 02m 05.5s. */
+export function formatTenths(seconds: number): string {
+  const tenths = Math.round(Math.max(0, seconds) * 10)
+  const secs = ((tenths % 600) / 10).toFixed(1)
+  const mins = Math.floor(tenths / 600) % 60
+  const hours = Math.floor(tenths / 36000)
+  if (hours > 0) return `${hours}h ${String(mins).padStart(2, '0')}m ${secs.padStart(4, '0')}s`
+  if (mins > 0) return `${mins}m ${secs.padStart(4, '0')}s`
+  return `${secs}s`
+}

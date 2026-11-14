@@ -58,6 +58,7 @@ const FEED_DISPLAY_KEYS = [
   'display.showThinking',
   'display.showVerboseToolOutput',
   'display.showStats',
+  'display.showTimestamps',
   'display.showAgentDefinitions',
   'display.showWorkflowBars',
   'display.showToolCallStreaming',

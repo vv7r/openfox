@@ -1049,6 +1049,14 @@
   cursor: pointer;
 }
 
+.agentSearch + .agentSearch {
+  margin-left: 2px;
+}
+
+.agentSearch[aria-pressed='true'] {
+  color: rgb(var(--color-accent-primary));
+}
+
 .agentSearch:hover {
   background: rgb(var(--color-bg-tertiary));
   color: rgb(var(--color-text-primary));

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { forgetThinking, thinkingSeconds } from './thinkingClock'
+import { forgetThinking, stopThinking, thinkingDuration, thinkingSeconds } from './thinkingClock'
 
 describe('thinkingSeconds', () => {
   it('counts from the first time a message is seen thinking', () => {
@@ -13,5 +13,15 @@ describe('thinkingSeconds', () => {
     expect(thinkingSeconds('b', 3000)).toBe(2)
     forgetThinking('b')
     expect(thinkingSeconds('b', 9000)).toBe(0)
+  })
+})
+
+describe('stopThinking', () => {
+  it('freezes the clock where thinking ended, so the duration stays readable', () => {
+    thinkingSeconds('c', 1000)
+    stopThinking('c', 3250)
+    expect(thinkingSeconds('c', 9000)).toBe(2.25)
+    expect(thinkingDuration('c')).toBe(2.25)
+    expect(thinkingDuration('never-seen')).toBeUndefined()
   })
 })

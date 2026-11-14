@@ -201,9 +201,27 @@ export async function sendMessage(content: string | OutgoingMessage): Promise<vo
 export const pauseGeneration = () => post('pause')
 export const resumeGeneration = () => post('resume')
 
+type Queue = ReturnType<typeof useApp.getState>['queue']
+
 export async function cancelQueued(queueId: string): Promise<void> {
   const url = sessionUrl(`queue/${queueId}`)
-  if (url) await authFetch(url, { method: 'DELETE' })
+  if (!url) return
+  const response = await authFetch(url, { method: 'DELETE' })
+  // The server sends no queue.state for a cancellation: apply the queue it answers with
+  const data = (await response.json().catch(() => ({}))) as { queueState?: Queue }
+  if (data.queueState) useApp.setState({ queue: data.queueState })
+}
+
+/** Stops the run and sends this queued message at once; the others queue again behind it, in order. */
+export async function sendQueuedNow(queueId: string): Promise<void> {
+  const response = await post('stop')
+  const data = (await response?.json().catch(() => ({}))) as { queuedMessages?: Queue } | undefined
+  const queued = data?.queuedMessages ?? []
+  useApp.setState({ queue: [] })
+  const ordered = [...queued.filter((m) => m.queueId === queueId), ...queued.filter((m) => m.queueId !== queueId)]
+  for (const { content, attachments, messageKind } of ordered) {
+    await sendMessage({ content, ...(attachments ? { attachments } : {}), ...(messageKind ? { messageKind } : {}) })
+  }
 }
 
 export const replayMessage = (messageId: string, content?: string) =>

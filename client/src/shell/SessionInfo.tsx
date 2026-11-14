@@ -196,10 +196,13 @@ function SessionFacts() {
   )
 }
 
+// Criteria have their own tab; review findings are the code reviewer's working notes, hidden at the user's request
+const HIDDEN_METADATA = new Set(['criteria', 'review_findings'])
+
 function OtherMetadata() {
   const entries = useApp((state) => state.session?.metadataEntries)
   if (!entries) return null
-  const keys = Object.keys(entries).filter((key) => key !== 'criteria' && (entries[key]?.length ?? 0) > 0)
+  const keys = Object.keys(entries).filter((key) => !HIDDEN_METADATA.has(key) && (entries[key]?.length ?? 0) > 0)
   return (
     <>
       {keys.map((key) => (

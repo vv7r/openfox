@@ -1209,3 +1209,72 @@ button.toolHeader {
 .autoPromptBody h1:first-child {
   margin-top: 0;
 }
+
+/* Copy and time on each feed block */
+.block,
+.tool {
+  position: relative;
+}
+
+.blockCopy {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(var(--color-primary) / 0.85);
+  color: rgb(var(--color-text-muted));
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tool .blockCopy {
+  top: 5px;
+  right: 6px;
+}
+
+.tool .toolHeader {
+  padding-right: 32px;
+}
+
+.block:hover > .blockCopy,
+.tool:hover > .blockCopy,
+.blockCopy:focus-visible {
+  opacity: 1;
+}
+
+.copyButton {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.blockCopy:hover,
+.copyButton:hover {
+  color: rgb(var(--color-text-primary));
+}
+
+@media (hover: none) {
+  .blockCopy {
+    opacity: 0.7;
+  }
+}
+
+.stamp {
+  display: block;
+  margin-bottom: 2px;
+  color: rgb(var(--color-text-muted));
+  font: 11px var(--font-mono);
+}
+
+.userRow > .stamp {
+  align-self: center;
+  margin: 0;
+}
