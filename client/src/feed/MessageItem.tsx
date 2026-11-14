@@ -46,7 +46,8 @@ function useCodeFolding(source: string, html: string | null) {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = styles.codeCopy!
-      button.textContent = t({ en: 'Copy', fr: 'Copier' })
+      button.title = t({ en: 'Copy', fr: 'Copier' })
+      button.setAttribute('aria-label', button.title)
       summary.append(button)
     })
     const onClick = (event: MouseEvent) => {
@@ -55,8 +56,8 @@ function useCodeFolding(source: string, html: string | null) {
       event.preventDefault() // a click in <summary> would fold the block
       const code = button.closest('details')?.querySelector('pre')?.textContent ?? ''
       void copyToClipboard(code).then(() => {
-        button.textContent = t({ en: 'Copied', fr: 'Copié' })
-        setTimeout(() => (button.textContent = t({ en: 'Copy', fr: 'Copier' })), 1500)
+        button.setAttribute('data-copied', '')
+        setTimeout(() => button.removeAttribute('data-copied'), 1500)
       })
     }
     element.addEventListener('click', onClick)
